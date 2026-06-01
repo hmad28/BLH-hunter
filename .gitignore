@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.env
+.test_blh_hunter_*.db
+blh_hunter.db
+blh_*.csv

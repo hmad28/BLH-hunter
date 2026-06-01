@@ -1,0 +1,2351 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lazy Dorking</title>
+  <link rel="icon" href="/assets/LazyDorking-logo.webp?v=2" type="image/webp">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1e1e1e;
+      --panel: #252526;
+      --panel-2: #2d2d30;
+      --activity: #181818;
+      --border: #3c3c3c;
+      --muted: #9aa0a6;
+      --text: #d4d4d4;
+      --strong: #f3f3f3;
+      --blue: #4aa5ff;
+      --green: #6fcf97;
+      --yellow: #d7ba7d;
+      --red: #f48771;
+      --focus: #007acc;
+      --terminal: #111111;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      color: inherit;
+    }
+
+    a {
+      color: var(--blue);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 56px 320px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) 24px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .activity {
+      grid-row: 1 / 3;
+      background: var(--activity);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 0;
+      gap: 6px;
+    }
+
+    .activity-spacer {
+      flex: 1;
+    }
+
+    .activity button {
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-left: 2px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      border-radius: 0;
+      position: relative;
+    }
+
+    .activity button:hover,
+    .activity button.active {
+      color: var(--strong);
+      background: #222222;
+    }
+
+    .activity button.active {
+      border-left-color: var(--blue);
+    }
+
+    .activity-logo {
+      width: 30px;
+      height: 30px;
+      object-fit: contain;
+      display: block;
+    }
+
+    .activity-icon {
+      width: 22px;
+      height: 22px;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .activity-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    .activity-indicator {
+      position: absolute;
+      right: 5px;
+      bottom: 5px;
+      width: 15px;
+      height: 15px;
+      border: 2px solid var(--activity);
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      background: #333333;
+      color: #ffffff;
+      pointer-events: none;
+    }
+
+    .activity-indicator svg {
+      width: 9px;
+      height: 9px;
+      stroke: currentColor;
+      stroke-width: 3;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .activity-indicator.is-running {
+      background: var(--blue);
+    }
+
+    .activity-indicator.is-running::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      border-top-color: #ffffff;
+      border-radius: 999px;
+      animation: activity-spin 0.8s linear infinite;
+    }
+
+    .activity-indicator.is-done {
+      background: var(--green);
+      color: #0f2719;
+    }
+
+    @keyframes activity-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .main {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) 210px;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .workspace {
+      min-width: 0;
+      overflow: auto;
+      padding: 18px 20px;
+    }
+
+    .statusbar {
+      grid-column: 2 / 4;
+      background: #007acc;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 12px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      color: var(--strong);
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    h1 {
+      font-size: 20px;
+    }
+
+    h2 {
+      font-size: 15px;
+      text-transform: uppercase;
+      color: #bbbbbb;
+      margin-bottom: 16px;
+    }
+
+    h3 {
+      font-size: 13px;
+      margin: 18px 0 8px;
+      color: #c7c7c7;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+      margin-bottom: 14px;
+    }
+
+    .field span,
+    .group-label {
+      color: #c7c7c7;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    input[type="text"],
+    input[type="search"],
+    select {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: #1b1b1b;
+      color: var(--text);
+      padding: 8px 10px;
+      outline: none;
+      border-radius: 3px;
+    }
+
+    input:focus,
+    select:focus {
+      border-color: var(--focus);
+      box-shadow: 0 0 0 1px var(--focus);
+    }
+
+    .chip-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .chip {
+      border: 1px solid var(--border);
+      background: #1b1b1b;
+      color: #cccccc;
+      padding: 7px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      text-align: left;
+      min-height: 34px;
+    }
+
+    .chip[aria-pressed="true"] {
+      border-color: var(--blue);
+      color: #ffffff;
+      background: #17324a;
+    }
+
+    .checkline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0;
+      color: #d0d0d0;
+    }
+
+    .actions,
+    .toolbar,
+    .header-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .header-row {
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .form-actions {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid #343434;
+    }
+
+    .form-actions .primary {
+      margin-right: 4px;
+    }
+
+    .button {
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 7px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      min-height: 34px;
+    }
+
+    .button:hover {
+      border-color: #6a6a6a;
+      background: #343438;
+    }
+
+    .button.primary {
+      background: #0e639c;
+      border-color: #0e639c;
+      color: #ffffff;
+    }
+
+    .button.danger {
+      color: #ffd2cc;
+      border-color: #73423a;
+    }
+
+    .button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    a.button[aria-disabled="true"] {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .icon-button {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+      line-height: 1;
+    }
+
+    .icon-button svg,
+    .scan-status-icon svg {
+      width: 17px;
+      height: 17px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .scan-status-icon {
+      width: 30px;
+      height: 30px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 999px;
+      color: #d0d0d0;
+      background: #333333;
+      border: 1px solid var(--border);
+    }
+
+    .scan-status-icon.done,
+    .scan-status-icon.alive {
+      background: #1f4d32;
+      color: #b8f5c8;
+      border-color: #2d6f49;
+    }
+
+    .scan-status-icon.running,
+    .scan-status-icon.pending,
+    .scan-status-icon.paused {
+      background: #17324a;
+      color: #b9ddff;
+      border-color: #2c5e88;
+    }
+
+    .scan-status-icon.error,
+    .scan-status-icon.broken {
+      background: #5a1d1d;
+      color: #ffd1d1;
+      border-color: #7d2a2a;
+    }
+
+    .scan-status-icon.cancelled,
+    .scan-status-icon.redirect,
+    .scan-status-icon.blocked,
+    .scan-status-icon.timeout,
+    .scan-status-icon.unknown {
+      background: #4b3d20;
+      color: #ffe0a3;
+      border-color: #6a562d;
+    }
+
+    .history {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .history button {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      padding: 8px;
+      text-align: left;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .history button:hover,
+    .history button.active {
+      background: #37373d;
+      border-color: var(--border);
+    }
+
+    .history-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: #e5e5e5;
+      min-width: 0;
+    }
+
+    .history-title > span:first-child {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .history-meta {
+      color: var(--muted);
+      display: block;
+      font-size: 12px;
+      margin-top: 4px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 12px;
+      background: #333333;
+      color: #d0d0d0;
+      white-space: nowrap;
+    }
+
+    .badge.done,
+    .badge.alive {
+      background: #1f4d32;
+      color: #b8f5c8;
+    }
+
+    .badge.running,
+    .badge.pending,
+    .badge.paused {
+      background: #17324a;
+      color: #b9ddff;
+    }
+
+    .badge.broken,
+    .badge.error {
+      background: #5a1d1d;
+      color: #ffd1d1;
+    }
+
+    .badge.cancelled,
+    .badge.redirect,
+    .badge.blocked,
+    .badge.timeout,
+    .badge.unknown {
+      background: #4b3d20;
+      color: #ffe0a3;
+    }
+
+    .toolbar {
+      margin-bottom: 12px;
+      flex-wrap: nowrap;
+      align-items: center;
+    }
+
+    .toolbar input[type="search"] {
+      flex: 1 1 360px;
+      max-width: 360px;
+      min-width: 220px;
+    }
+
+    .toolbar select {
+      flex: 0 0 220px;
+      width: 220px;
+    }
+
+    .table-wrap {
+      border: 1px solid var(--border);
+      overflow: auto;
+      background: #1b1b1b;
+    }
+
+    .status-select {
+      min-width: 104px;
+      width: auto;
+      min-height: 28px;
+      padding: 3px 26px 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border-color: var(--border);
+      background-color: #222222;
+      color: var(--text);
+    }
+
+    .status-select.alive {
+      background-color: #1f4d32;
+      color: #b8f5c8;
+    }
+
+    .status-select.broken {
+      background-color: #5a1d1d;
+      color: #ffd1d1;
+    }
+
+    .status-select.redirect,
+    .status-select.blocked,
+    .status-select.timeout,
+    .status-select.unknown {
+      background-color: #4b3d20;
+      color: #ffe0a3;
+    }
+
+    .status-select.pending {
+      background-color: #17324a;
+      color: #b9ddff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 820px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid #2f2f2f;
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+      max-width: 420px;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--panel-2);
+      color: #cfcfcf;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    td {
+      color: #d6d6d6;
+      word-break: break-word;
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 28px 0;
+    }
+
+    .terminal {
+      background: var(--terminal);
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-rows: 34px minmax(0, 1fr);
+      min-height: 0;
+    }
+
+    .terminal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      background: #161616;
+      border-bottom: 1px solid #2a2a2a;
+      color: #cccccc;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .terminal-body {
+      overflow: auto;
+      padding: 10px 12px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: normal;
+      color: #d7d7d7;
+    }
+
+    .terminal-line {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
+    .terminal-tag {
+      color: var(--blue);
+      font-weight: 700;
+    }
+
+    .terminal-date {
+      color: var(--yellow);
+    }
+
+    .terminal-text {
+      color: #d7d7d7;
+    }
+
+    .terminal-line.is-error .terminal-text {
+      color: var(--red);
+    }
+
+    .terminal-line.is-found .terminal-text,
+    .terminal-line.is-done .terminal-text {
+      color: var(--green);
+    }
+
+    .terminal-line.is-filter .terminal-text,
+    .terminal-line.is-debug .terminal-text {
+      color: #8ecbff;
+    }
+
+    .settings-grid {
+      display: grid;
+      gap: 10px;
+      color: #d7d7d7;
+    }
+
+    .setting-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px solid #343434;
+      padding: 8px 0;
+    }
+
+    .dashboard-tabs {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .dashboard-tab {
+      width: 100%;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--text);
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 8px;
+      text-align: left;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    .dashboard-tab:hover,
+    .dashboard-tab.active {
+      background: #37373d;
+      border-color: var(--border);
+    }
+
+    .dashboard-tab img {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+    }
+
+    .dashboard-tab-title {
+      color: #e5e5e5;
+      font-weight: 600;
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dashboard-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .dashboard-kpis,
+    .feature-grid,
+    .detail-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .dashboard-kpis {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 18px;
+    }
+
+    .kpi,
+    .feature-card {
+      border: 1px solid var(--border);
+      background: #1b1b1b;
+      border-radius: 6px;
+    }
+
+    .kpi {
+      padding: 12px;
+    }
+
+    .kpi-button {
+      width: 100%;
+      text-align: left;
+      cursor: pointer;
+      color: inherit;
+    }
+
+    .kpi-button.active,
+    .kpi-button:hover {
+      border-color: var(--blue);
+      background: #17324a;
+    }
+
+    .kpi-label,
+    .mini-label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .kpi-value {
+      color: var(--strong);
+      font-size: 24px;
+      line-height: 1.2;
+      margin-top: 4px;
+    }
+
+    .feature-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .detail-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      margin-bottom: 14px;
+    }
+
+    .feature-card {
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .detail-card {
+      border: 1px solid var(--border);
+      background: #1b1b1b;
+      border-radius: 6px;
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .detail-card h3 {
+      margin-top: 0;
+    }
+
+    .compact-table {
+      min-width: 0;
+    }
+
+    .compact-table th,
+    .compact-table td {
+      max-width: 260px;
+      padding: 8px;
+    }
+
+    .feature-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .feature-head img {
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+    }
+
+    .feature-head h2 {
+      margin: 0;
+    }
+
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .mini-value {
+      color: var(--strong);
+      font-size: 18px;
+      margin-top: 2px;
+    }
+
+    .usage-list,
+    .recent-list {
+      display: grid;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .usage-row,
+    .recent-row {
+      display: grid;
+      gap: 4px;
+      padding: 8px;
+      background: #202020;
+      border: 1px solid #303030;
+      border-radius: 4px;
+      min-width: 0;
+    }
+
+    .usage-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+    }
+
+    .usage-row .history-meta {
+      grid-column: 1 / -1;
+    }
+
+    .dashboard-domain-row {
+      cursor: pointer;
+    }
+
+    .dashboard-domain-row:hover td,
+    .dashboard-domain-row.active td {
+      background: #252f38;
+    }
+
+    .dashboard-domain-row.active td:first-child {
+      color: #ffffff;
+      border-left: 2px solid var(--blue);
+    }
+
+    .dashboard-filter {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(160px, 220px) minmax(140px, 180px);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .section-head h3 {
+      margin: 0;
+    }
+
+    .pager {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .pager .button {
+      min-height: 28px;
+      padding: 4px 8px;
+    }
+
+    .usage-name,
+    .recent-domain {
+      color: #e5e5e5;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 900px) {
+      .shell {
+        grid-template-columns: 48px minmax(0, 1fr);
+        grid-template-rows: minmax(190px, 34vh) minmax(0, 1fr) 24px;
+      }
+
+      .activity {
+        grid-row: 1 / 4;
+      }
+
+      .sidebar {
+        grid-column: 2;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .main {
+        grid-column: 2;
+        grid-row: 2;
+      }
+
+      .statusbar {
+        grid-column: 2;
+      }
+
+      .chip-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .toolbar {
+        flex-wrap: wrap;
+      }
+
+      .toolbar input[type="search"],
+      .toolbar select {
+        max-width: none;
+        width: 100%;
+        flex: 1 1 100%;
+      }
+
+      .dashboard-kpis,
+      .feature-grid,
+      .detail-grid,
+      .dashboard-filter {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .chip-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .header-row {
+        align-items: flex-start;
+      }
+
+      .workspace {
+        padding: 14px;
+      }
+
+      .dashboard-hero {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="activity" aria-label="Activity">
+      <button data-activity="dashboard" title="Dashboard">
+        <img class="activity-logo" src="/assets/LazyDorking-logo.webp?v=2" alt="">
+        <span class="activity-label">Dashboard</span>
+      </button>
+      <button data-activity="blh" title="BLH Finder">
+        <img class="activity-logo" src="/assets/BLH-logo.webp?v=2" alt="">
+        <span class="activity-label">BLH Finder</span>
+      </button>
+      <button data-activity="bac" title="BAC Finder">
+        <img class="activity-logo" src="/assets/BAC-logo.webp?v=2" alt="">
+        <span class="activity-label">BAC Finder</span>
+      </button>
+      <button data-activity="cred" title="Credential Finder">
+        <img class="activity-logo" src="/assets/CRED-logo.webp?v=2" alt="">
+        <span class="activity-label">Credential Finder</span>
+      </button>
+      <div class="activity-spacer"></div>
+      <button data-activity="run" title="Focus run form" aria-label="Focus run form">
+        <svg class="activity-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="8"></circle>
+          <path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path>
+          <circle cx="12" cy="12" r="2"></circle>
+        </svg>
+      </button>
+      <button data-activity="settings" title="Settings" aria-label="Settings">
+        <svg class="activity-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.04.04a2 2 0 1 1-2.83 2.83l-.04-.04a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.07a1.7 1.7 0 0 0-1.03-1.56 1.7 1.7 0 0 0-1.88.34l-.04.04a2 2 0 1 1-2.83-2.83l.04-.04A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.07A1.7 1.7 0 0 0 4.6 8a1.7 1.7 0 0 0-.34-1.88l-.04-.04a2 2 0 1 1 2.83-2.83l.04.04A1.7 1.7 0 0 0 9 3.6a1.7 1.7 0 0 0 1-1.53V2a2 2 0 1 1 4 0v.07a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.04-.04a2 2 0 1 1 2.83 2.83l-.04.04A1.7 1.7 0 0 0 19.4 8a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.07A1.7 1.7 0 0 0 19.4 15Z"></path>
+        </svg>
+      </button>
+    </nav>
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <section class="workspace" id="workspace"></section>
+      <section class="terminal" aria-label="Terminal">
+        <div class="terminal-head">
+          <span>Terminal</span>
+          <span id="terminalStatus">Idle</span>
+        </div>
+        <div class="terminal-body" id="terminal"></div>
+      </section>
+    </main>
+    <footer class="statusbar">
+      <span>Lazy Dorking</span>
+      <span id="statusText">Ready</span>
+    </footer>
+  </div>
+
+  <script>
+    const FEATURES = {
+      blh: {
+        label: "BLH",
+        tag: "BLH",
+        logo: "/assets/BLH-logo.webp?v=2",
+        title: "Broken Link Hijacking",
+        endpoint: "/api/blh",
+        payloadKey: "platforms",
+        optionLabel: "Platforms",
+        options: [
+          ["twitter", "X / Twitter"],
+          ["instagram", "Instagram"],
+          ["tiktok", "TikTok"],
+          ["facebook", "Facebook"],
+          ["youtube", "YouTube"],
+          ["linkedin", "LinkedIn"],
+          ["github", "GitHub"],
+          ["discord", "Discord"],
+          ["bitly", "Bitly"],
+          ["flickr", "Flickr"]
+        ],
+        columns: ["platform", "target_url", "status", "http_code", "source_url"]
+      },
+      bac: {
+        label: "BAC",
+        tag: "BAC",
+        logo: "/assets/BAC-logo.webp?v=2",
+        title: "Public Resource Finder",
+        endpoint: "/api/bac",
+        payloadKey: "services",
+        optionLabel: "Services",
+        options: [
+          ["google_drive", "Drive"],
+          ["google_docs", "Docs"],
+          ["google_sheets", "Sheets"],
+          ["google_slides", "Slides"],
+          ["google_forms", "Forms"],
+          ["google_sites", "Sites"],
+          ["onedrive", "OneDrive"],
+          ["sharepoint", "SharePoint"],
+          ["dropbox", "Dropbox"],
+          ["box", "Box"],
+          ["mega", "Mega"],
+          ["mediafire", "MediaFire"],
+          ["github", "GitHub"],
+          ["gitlab", "GitLab"],
+          ["bitbucket", "Bitbucket"],
+          ["notion", "Notion"],
+          ["confluence", "Confluence"],
+          ["jira", "Jira"],
+          ["trello", "Trello"],
+          ["figma", "Figma"],
+          ["miro", "Miro"],
+          ["canva", "Canva"],
+          ["prezi", "Prezi"],
+          ["pitch", "Pitch"]
+        ],
+        columns: ["service", "target_url", "source_url", "anchor_text"]
+      },
+      cred: {
+        label: "Cred",
+        tag: "CRED",
+        logo: "/assets/CRED-logo.webp?v=2",
+        title: "Credential and Config Finder",
+        endpoint: "/api/cred",
+        payloadKey: "categories",
+        optionLabel: "Categories",
+        options: [
+          ["config", "Config"],
+          ["docker", "Docker"],
+          ["database", "DB Dumps"],
+          ["archives", "Archives"],
+          ["logs", "Logs"],
+          ["source_control", "Source Control"],
+          ["other", "Other"]
+        ],
+        columns: ["file_type", "pattern_matched", "target_url", "source_url"]
+      }
+    };
+
+    const COLUMN_LABELS = {
+      platform: "Platform",
+      service: "Service",
+      file_type: "File Type",
+      pattern_matched: "Pattern",
+      type: "Type",
+      target_url: "Target URL",
+      source_url: "Source",
+      final_url: "Final URL",
+      anchor_text: "Anchor Text",
+      status: "Status",
+      http_code: "HTTP Code",
+      found_at: "Found At",
+      crawled_at: "Crawled At",
+      hits: "Hits"
+    };
+
+    const FINAL_STATUSES = new Set(["done", "error", "cancelled"]);
+    const ACTIVE_SCAN_STATUSES = new Set(["pending", "running", "paused"]);
+    const STATUS_BADGES = new Set(["done", "alive", "running", "pending", "paused", "broken", "error", "cancelled", "redirect", "blocked", "timeout", "unknown"]);
+    const BLH_RESULT_STATUSES = ["pending", "broken", "alive", "redirect", "blocked", "timeout", "unknown"];
+    const DASHBOARD_PAGE_SIZE = 100;
+    const state = {
+      feature: "blh",
+      dashboard: false,
+      settings: false,
+      selections: {},
+      domainInputs: {},
+      scans: {},
+      selectedScanId: {},
+      detail: null,
+      results: [],
+      dashboardStats: null,
+      dashboardFeature: "blh",
+      dashboardDetails: {},
+      dashboardSelectedDomain: {},
+      dashboardDomainDetails: {},
+      dashboardDomainFilters: {},
+      dashboardDomainLoadingKey: "",
+      dashboardFilterTimer: null,
+      resultQuery: "",
+      statusFilter: "",
+      pollTimer: null,
+      activityPollTimer: null,
+      scanStatusById: {},
+      unreadDoneScans: {},
+      notifyAudio: null,
+      notifyAudioReady: false
+    };
+
+    const $ = (selector) => document.querySelector(selector);
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replaceAll("`", "&#096;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString();
+    }
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
+    function cfg() {
+      return FEATURES[state.feature];
+    }
+
+    function iconSvg(name) {
+      const paths = {
+        refresh: `<path d="M21 12a9 9 0 0 1-15.5 6.2"></path><path d="M3 12A9 9 0 0 1 18.5 5.8"></path><path d="M18 2v4h4"></path><path d="M6 22v-4H2"></path>`,
+        stop: `<rect x="6" y="6" width="12" height="12" rx="1"></rect>`,
+        pause: `<path d="M9 5v14"></path><path d="M15 5v14"></path>`,
+        play: `<path d="M8 5v14l11-7Z"></path>`,
+        trash: `<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>`,
+        download: `<path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path>`,
+        done: `<path d="m5 12 4 4L19 6"></path>`,
+        running: `<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"></path>`,
+        pending: `<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>`,
+        paused: `<path d="M9 5v14"></path><path d="M15 5v14"></path>`,
+        error: `<circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16h.01"></path>`,
+        cancelled: `<circle cx="12" cy="12" r="9"></circle><path d="m8 8 8 8"></path><path d="m16 8-8 8"></path>`
+      };
+      return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.pending}</svg>`;
+    }
+
+    function renderScanStatusIcon(status) {
+      const icon = FINAL_STATUSES.has(status) ? status : status === "paused" ? "paused" : status === "running" ? "running" : "pending";
+      return `<span class="scan-status-icon ${escapeAttr(status)}" title="Status: ${escapeAttr(status)}" aria-label="Status: ${escapeAttr(status)}">${iconSvg(icon)}</span>`;
+    }
+
+    function featureHasActiveScan(featureId) {
+      return (state.scans[featureId] || []).some((scan) => ACTIVE_SCAN_STATUSES.has(scan.status));
+    }
+
+    function featureHasUnreadDone(featureId) {
+      return Boolean(state.unreadDoneScans[featureId]?.size);
+    }
+
+    function renderActivityIndicator(featureId) {
+      if (featureHasActiveScan(featureId)) {
+        return `<span class="activity-indicator is-running" title="Scanning" aria-label="Scanning"></span>`;
+      }
+      if (featureHasUnreadDone(featureId)) {
+        return `<span class="activity-indicator is-done" title="Scan done" aria-label="Scan done">${iconSvg("done")}</span>`;
+      }
+      return "";
+    }
+
+    function summarizeChoices(items, limit = 3) {
+      const values = items.filter(Boolean);
+      if (values.length <= limit) return values.join(", ");
+      return `${values.slice(0, limit).join(", ")} +${values.length - limit} more`;
+    }
+
+    function initSelections() {
+      for (const [key, feature] of Object.entries(FEATURES)) {
+        state.selections[key] = new Set(feature.options.map((option) => option[0]));
+        state.domainInputs[key] = "";
+        state.scans[key] = [];
+        state.selectedScanId[key] = "";
+        state.dashboardSelectedDomain[key] = "";
+        state.dashboardDomainFilters[key] = { q: "", resultType: "", status: "", view: "targets", targetPage: 0, crawledPage: 0 };
+        state.scanStatusById[key] = {};
+        state.unreadDoneScans[key] = new Set();
+      }
+    }
+
+    function setStatus(text) {
+      $("#statusText").textContent = text;
+    }
+
+    function unlockNotifySound() {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        state.notifyAudio = state.notifyAudio || new AudioContext();
+        if (state.notifyAudio.state === "suspended") {
+          state.notifyAudio.resume().catch(() => {});
+        }
+        state.notifyAudioReady = true;
+      } catch (error) {
+        state.notifyAudioReady = false;
+      }
+    }
+
+    function playDoneSound() {
+      try {
+        unlockNotifySound();
+        const ctx = state.notifyAudio;
+        if (!ctx) return;
+        const play = () => {
+          const now = ctx.currentTime;
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.0001, now);
+          gain.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+          gain.connect(ctx.destination);
+          [660, 880, 1175].forEach((frequency, index) => {
+            const osc = ctx.createOscillator();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(frequency, now + index * 0.1);
+            osc.connect(gain);
+            osc.start(now + index * 0.1);
+            osc.stop(now + index * 0.1 + 0.16);
+          });
+        };
+        if (ctx.state === "running") {
+          play();
+        } else {
+          ctx.resume().then(play).catch(() => {});
+        }
+      } catch (error) {
+        state.notifyAudioReady = false;
+      }
+    }
+
+    document.addEventListener("pointerdown", unlockNotifySound, { once: true });
+    document.addEventListener("keydown", unlockNotifySound, { once: true });
+
+    function renderActivity() {
+      document.querySelectorAll("[data-activity]").forEach((button) => {
+        const id = button.dataset.activity;
+        const isFeature = Object.prototype.hasOwnProperty.call(FEATURES, id);
+        button.classList.toggle(
+          "active",
+          !state.settings && (
+            (id === "dashboard" && state.dashboard) ||
+            (isFeature && !state.dashboard && id === state.feature)
+          )
+        );
+        if (state.settings && id === "settings") button.classList.add("active");
+        const oldIndicator = button.querySelector(".activity-indicator");
+        if (oldIndicator) oldIndicator.remove();
+        if (isFeature) button.insertAdjacentHTML("beforeend", renderActivityIndicator(id));
+        button.onclick = () => {
+          if (id === "run") {
+            const input = $("#domainInput");
+            if (input) input.focus();
+            return;
+          }
+          if (id === "settings") {
+            state.settings = true;
+            state.dashboard = false;
+            render();
+            return;
+          }
+          if (id === "dashboard") {
+            showDashboard();
+            return;
+          }
+          switchFeature(id);
+        };
+      });
+    }
+
+    function showDashboard() {
+      state.dashboard = true;
+      state.settings = false;
+      state.detail = null;
+      state.results = [];
+      state.resultQuery = "";
+      state.statusFilter = "";
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+      render();
+      loadDashboardStats();
+      loadDashboardFeatureDetail(state.dashboardFeature);
+    }
+
+    function markFeatureDoneRead(featureId) {
+      if (state.unreadDoneScans[featureId]) {
+        state.unreadDoneScans[featureId].clear();
+      }
+    }
+
+    function switchFeature(feature) {
+      state.feature = feature;
+      markFeatureDoneRead(feature);
+      state.dashboard = false;
+      state.settings = false;
+      state.detail = null;
+      state.results = [];
+      state.resultQuery = "";
+      state.statusFilter = "";
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+      render();
+      loadScans();
+    }
+
+    function render() {
+      renderActivity();
+      renderSidebar();
+      renderWorkspace();
+      renderTerminal();
+    }
+
+    function renderSidebar() {
+      const focusedDomainInput = document.activeElement?.id === "domainInput";
+      const domainSelection = focusedDomainInput
+        ? { start: $("#domainInput")?.selectionStart ?? 0, end: $("#domainInput")?.selectionEnd ?? 0 }
+        : null;
+      if (state.settings) {
+        $("#sidebar").innerHTML = `
+          <h2>Settings</h2>
+          <div class="settings-grid">
+            <div class="setting-row"><span>Database</span><strong>blh_hunter.db</strong></div>
+            <div class="setting-row"><span>BAC dorking</span><strong>Bing fallback</strong></div>
+            <div class="setting-row"><span>Cred mode</span><strong>Passive</strong></div>
+            <div class="setting-row"><span>API root</span><strong>/api</strong></div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.dashboard) {
+        const stats = state.dashboardStats;
+        const featureRows = stats
+          ? stats.features.map((feature) => `
+              <button class="dashboard-tab ${state.dashboardFeature === feature.id ? "active" : ""}" type="button" data-dashboard-feature="${escapeAttr(feature.id)}">
+                <img src="${escapeAttr(FEATURES[feature.id]?.logo || "/assets/LazyDorking-logo.webp")}" alt="">
+                <span>
+                  <span class="dashboard-tab-title">${escapeHtml(feature.label)}</span>
+                  <span class="history-meta">${escapeHtml(feature.title)}</span>
+                </span>
+                <strong>${formatNumber(feature.scan_count)}</strong>
+              </button>
+            `).join("")
+          : `<div class="empty">Loading dashboard</div>`;
+        $("#sidebar").innerHTML = `
+          <h2>Dashboard</h2>
+          <button class="button" type="button" id="refreshDashboard">Refresh</button>
+          <h3>Feature Stats</h3>
+          <div class="dashboard-tabs">${featureRows}</div>
+        `;
+        $("#refreshDashboard").onclick = loadDashboardStats;
+        document.querySelectorAll("[data-dashboard-feature]").forEach((button) => {
+          button.onclick = () => {
+            state.dashboardFeature = button.dataset.dashboardFeature;
+            state.dashboardSelectedDomain[state.dashboardFeature] = "";
+            renderSidebar();
+            renderWorkspace();
+            loadDashboardFeatureDetail(state.dashboardFeature);
+          };
+        });
+        return;
+      }
+
+      const feature = cfg();
+      const options = feature.options.map(([value, label]) => {
+        const active = state.selections[state.feature].has(value);
+        return `<button type="button" class="chip" data-chip="${escapeAttr(value)}" aria-pressed="${active}">${escapeHtml(label)}</button>`;
+      }).join("");
+      const scans = state.scans[state.feature] || [];
+      const history = scans.length ? scans.map((scan) => {
+        const active = state.selectedScanId[state.feature] === scan.id ? " active" : "";
+        const chosen = scan.platforms || scan.services || scan.categories || [];
+        const chosenFull = chosen.join(", ");
+        const chosenSummary = summarizeChoices(chosen);
+        return `
+          <button type="button" class="${active}" data-scan="${escapeAttr(scan.id)}">
+            <span class="history-title">
+              <span>${escapeHtml(scan.domain)}</span>
+              <span class="badge ${escapeAttr(scan.status)}">${escapeHtml(scan.status)}</span>
+            </span>
+            <span class="history-meta" title="${escapeAttr(chosenFull)}">${escapeHtml(chosenSummary)}</span>
+          </button>
+        `;
+      }).join("") : `<div class="empty">No scans</div>`;
+
+      const bacExtra = state.feature === "bac"
+        ? `<label class="checkline"><input id="includeDorking" type="checkbox"> Include dorking</label>`
+        : "";
+      const credExtra = state.feature === "cred"
+        ? `<label class="checkline"><input id="activeBruteforce" type="checkbox"> Active brute-force</label>`
+        : "";
+
+      $("#sidebar").innerHTML = `
+        <h2>${escapeHtml(feature.label)}</h2>
+        <form id="scanForm">
+          <label class="field">
+            <span>Domain</span>
+            <input id="domainInput" type="text" placeholder="example.com" autocomplete="off" required value="${escapeAttr(state.domainInputs[state.feature] || "")}">
+          </label>
+          <div>
+            <div class="group-label">${escapeHtml(feature.optionLabel)}</div>
+            <div class="chip-grid">${options}</div>
+          </div>
+          ${bacExtra}
+          ${credExtra}
+          <div class="actions form-actions">
+            <button class="button primary" type="submit">Run Scan</button>
+            <button class="button" type="button" id="selectAll">All</button>
+            <button class="button" type="button" id="selectNone">None</button>
+          </div>
+        </form>
+        <h3>History</h3>
+        <div class="history">${history}</div>
+      `;
+
+      $("#scanForm").onsubmit = submitScan;
+      const domainInput = $("#domainInput");
+      domainInput.oninput = () => {
+        state.domainInputs[state.feature] = domainInput.value;
+      };
+      if (focusedDomainInput && domainSelection) {
+        domainInput.focus();
+        domainInput.setSelectionRange(domainSelection.start, domainSelection.end);
+      }
+      $("#selectAll").onclick = () => {
+        state.selections[state.feature] = new Set(feature.options.map((option) => option[0]));
+        renderSidebar();
+      };
+      $("#selectNone").onclick = () => {
+        state.selections[state.feature] = new Set();
+        renderSidebar();
+      };
+      document.querySelectorAll("[data-chip]").forEach((button) => {
+        button.onclick = () => {
+          const value = button.dataset.chip;
+          const selected = state.selections[state.feature];
+          if (selected.has(value)) selected.delete(value);
+          else selected.add(value);
+          button.setAttribute("aria-pressed", String(selected.has(value)));
+        };
+      });
+      document.querySelectorAll("[data-scan]").forEach((button) => {
+        button.onclick = () => selectScan(button.dataset.scan);
+      });
+    }
+
+    function selectedScan() {
+      const id = state.selectedScanId[state.feature];
+      if (state.detail && state.detail.id === id) return state.detail;
+      return (state.scans[state.feature] || []).find((scan) => scan.id === id) || state.detail;
+    }
+
+    function renderWorkspace() {
+      if (state.settings) {
+        $("#workspace").innerHTML = `
+          <div class="header-row">
+            <div>
+              <h1>Lazy Dorking</h1>
+              <div class="history-meta">FastAPI + SQLite recon workspace</div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.dashboard) {
+        renderDashboardWorkspace();
+        return;
+      }
+
+      const feature = cfg();
+      const scan = selectedScan();
+      const exportHref = scan ? `${feature.endpoint}/scans/${encodeURIComponent(scan.id)}/export` : "#";
+      const active = scan && !FINAL_STATUSES.has(scan.status);
+      const paused = scan?.status === "paused";
+      const rows = filteredResults();
+      const filter = `
+        <div class="toolbar">
+          <input id="resultQuery" type="search" placeholder="Filter results" value="${escapeAttr(state.resultQuery)}">
+          ${state.feature === "blh" ? `
+            <select id="statusFilter">
+              ${["", "broken", "alive", "redirect", "blocked", "timeout", "unknown"].map((value) => (
+                `<option value="${value}" ${state.statusFilter === value ? "selected" : ""}>${value || "Any status"}</option>`
+              )).join("")}
+            </select>
+          ` : ""}
+        </div>
+      `;
+
+      $("#workspace").innerHTML = `
+        <div class="header-row">
+          <div>
+            <h1>${escapeHtml(feature.title)}</h1>
+            <div class="history-meta">${scan ? escapeHtml(scan.id) : "No scan selected"}</div>
+          </div>
+          <div class="actions">
+            ${scan ? renderScanStatusIcon(scan.status) : ""}
+            <button class="button icon-button" id="refreshScans" type="button" title="Refresh" aria-label="Refresh">${iconSvg("refresh")}</button>
+            <button class="button icon-button" id="pauseScan" type="button" title="Pause" aria-label="Pause" ${active && !paused ? "" : "disabled"}>${iconSvg("pause")}</button>
+            <button class="button icon-button" id="continueScan" type="button" title="Continue" aria-label="Continue" ${paused ? "" : "disabled"}>${iconSvg("play")}</button>
+            <button class="button icon-button" id="stopScan" type="button" title="Stop" aria-label="Stop" ${active ? "" : "disabled"}>${iconSvg("stop")}</button>
+            <button class="button icon-button danger" id="deleteScan" type="button" title="Delete" aria-label="Delete" ${scan ? "" : "disabled"}>${iconSvg("trash")}</button>
+            <a class="button icon-button" href="${escapeAttr(exportHref)}" title="Export CSV" aria-label="Export CSV" ${scan ? "" : "aria-disabled=\"true\""}>${iconSvg("download")}</a>
+          </div>
+        </div>
+        ${scan ? `${filter}<div id="resultTableMount">${renderResultsTable(rows)}</div>` : `<div class="empty">Select or run a scan</div>`}
+      `;
+
+      $("#refreshScans").onclick = () => loadScans(true);
+      $("#pauseScan").onclick = pauseScan;
+      $("#continueScan").onclick = continueScan;
+      $("#stopScan").onclick = stopScan;
+      $("#deleteScan").onclick = deleteScan;
+      bindResultStatusEditors();
+      const query = $("#resultQuery");
+      if (query) {
+        query.oninput = () => {
+          state.resultQuery = query.value;
+          renderResultTableMount();
+        };
+      }
+      const status = $("#statusFilter");
+      if (status) {
+        status.onchange = () => {
+          state.statusFilter = status.value;
+          renderResultTableMount();
+        };
+      }
+    }
+
+    function renderResultTableMount() {
+      const mount = $("#resultTableMount");
+      if (mount) {
+        mount.innerHTML = renderResultsTable(filteredResults());
+        bindResultStatusEditors();
+      }
+    }
+
+    function dashboardDomainFilters(featureId = state.dashboardFeature) {
+      return state.dashboardDomainFilters[featureId] || { q: "", resultType: "", status: "", view: "targets", targetPage: 0, crawledPage: 0 };
+    }
+
+    function dashboardDomainKey(featureId, domain, filters = dashboardDomainFilters(featureId)) {
+      const view = filters.view || "targets";
+      const page = view === "crawled" ? filters.crawledPage || 0 : filters.targetPage || 0;
+      return [featureId, domain, view, page, filters.q || "", filters.resultType || "", filters.status || ""].join("::");
+    }
+
+    function renderDashboardWorkspace() {
+      const stats = state.dashboardStats;
+      const detail = state.dashboardDetails[state.dashboardFeature];
+      const selectedFeature = detail?.feature || stats?.features.find((feature) => feature.id === state.dashboardFeature);
+      if (!stats || !selectedFeature) {
+        $("#workspace").innerHTML = `
+          <div class="header-row">
+            <div>
+              <h1>Dashboard</h1>
+              <div class="history-meta">Loading activity statistics</div>
+            </div>
+          </div>
+          <div class="empty">Loading dashboard</div>
+        `;
+        return;
+      }
+      const logo = FEATURES[selectedFeature.id]?.logo || "/assets/LazyDorking-logo.webp";
+      const domains = detail?.domains || [];
+      const selectedDomain = state.dashboardSelectedDomain[selectedFeature.id] || "";
+      const filters = dashboardDomainFilters(selectedFeature.id);
+      const domainKey = selectedDomain ? dashboardDomainKey(selectedFeature.id, selectedDomain, filters) : "";
+      const domainDetail = domainKey ? state.dashboardDomainDetails[domainKey] : null;
+      const isDomainLoading = Boolean(domainKey && state.dashboardDomainLoadingKey === domainKey);
+      if (selectedDomain) {
+        $("#workspace").innerHTML = renderDashboardDomainDetail(selectedFeature, selectedDomain, filters, domainDetail, isDomainLoading);
+        $("#backDashboardOverview").onclick = () => {
+          state.dashboardSelectedDomain[state.dashboardFeature] = "";
+          renderWorkspace();
+        };
+        $("#refreshDashboardDomain").onclick = () => loadDashboardDomainDetail(state.dashboardFeature);
+        bindDashboardDomainFilters(filters);
+        bindDashboardDomainNavigation(filters);
+        return;
+      }
+      const kpis = [
+        ["Scans", selectedFeature.scan_count],
+        ["Target Links", detail?.target_link_count ?? selectedFeature.result_count],
+        ["Crawled URLs", detail?.crawled_url_count ?? selectedFeature.source_count],
+        ["Domains", domains.length]
+      ].map(([label, value]) => `
+        <div class="kpi">
+          <div class="kpi-label">${escapeHtml(label)}</div>
+          <div class="kpi-value">${formatNumber(value)}</div>
+        </div>
+      `).join("");
+
+      const usageRows = selectedFeature.usage.length ? selectedFeature.usage.map((item) => `
+          <div class="usage-row">
+            <span class="usage-name">${escapeHtml(item.name)}</span>
+            <span class="badge">${formatNumber(item.count)}x</span>
+            <span class="history-meta">${escapeHtml(formatDate(item.last_used_at))}</span>
+          </div>
+        `).join("") : `<div class="empty">No usage yet</div>`;
+
+      $("#workspace").innerHTML = `
+        <div class="dashboard-hero">
+          <div class="feature-head">
+            <img src="${escapeAttr(logo)}" alt="">
+            <div>
+              <h1>${escapeHtml(selectedFeature.label)} Dashboard</h1>
+              <div class="history-meta">${escapeHtml(selectedFeature.title)} stats and historical results</div>
+            </div>
+          </div>
+          <button class="button" type="button" id="refreshDashboardMain">Refresh</button>
+        </div>
+        <div class="dashboard-kpis">${kpis}</div>
+        <div class="detail-grid">
+          <section class="detail-card">
+            <h3>Used For</h3>
+            <div class="usage-list">${usageRows}</div>
+          </section>
+          <section class="detail-card">
+            <h3>Main Domains Scanned</h3>
+            ${renderDashboardDomainTable(domains, selectedDomain)}
+          </section>
+        </div>
+      `;
+      $("#refreshDashboardMain").onclick = () => {
+        loadDashboardStats();
+        loadDashboardFeatureDetail(state.dashboardFeature);
+      };
+      document.querySelectorAll("[data-dashboard-domain]").forEach((row) => {
+        row.onclick = () => selectDashboardDomain(row.dataset.dashboardDomain);
+        row.onkeydown = (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectDashboardDomain(row.dataset.dashboardDomain);
+          }
+        };
+      });
+    }
+
+    function bindDashboardDomainFilters(filters) {
+      const query = $("#dashboardDomainQuery");
+      if (query) {
+        query.oninput = () => {
+          filters.q = query.value;
+          filters.targetPage = 0;
+          queueDashboardDomainLoad();
+        };
+      }
+      const resultType = $("#dashboardResultType");
+      if (resultType) {
+        resultType.onchange = () => {
+          filters.resultType = resultType.value;
+          filters.targetPage = 0;
+          loadDashboardDomainDetail(state.dashboardFeature);
+        };
+      }
+      const status = $("#dashboardDomainStatus");
+      if (status) {
+        status.onchange = () => {
+          filters.status = status.value;
+          filters.targetPage = 0;
+          loadDashboardDomainDetail(state.dashboardFeature);
+        };
+      }
+    }
+
+    function bindDashboardDomainNavigation(filters) {
+      document.querySelectorAll("[data-dashboard-domain-view]").forEach((button) => {
+        button.onclick = () => {
+          filters.view = button.dataset.dashboardDomainView;
+          loadDashboardDomainDetail(state.dashboardFeature);
+        };
+      });
+      document.querySelectorAll("[data-dashboard-page]").forEach((button) => {
+        button.onclick = () => {
+          const [view, direction] = button.dataset.dashboardPage.split(":");
+          const key = view === "crawled" ? "crawledPage" : "targetPage";
+          filters.view = view;
+          filters[key] = Math.max(0, (filters[key] || 0) + (direction === "next" ? 1 : -1));
+          loadDashboardDomainDetail(state.dashboardFeature);
+        };
+      });
+    }
+
+    function renderDashboardDomainTable(rows, selectedDomain) {
+      if (!rows.length) return `<div class="empty">No domains yet</div>`;
+      const head = ["domain", "scans", "sources", "links", "last_scan"]
+        .map((column) => `<th>${escapeHtml((COLUMN_LABELS[column] || column).replaceAll("_", " "))}</th>`)
+        .join("");
+      const body = rows.map((row) => {
+        const active = row.domain === selectedDomain ? " active" : "";
+        return `
+          <tr class="dashboard-domain-row${active}" tabindex="0" data-dashboard-domain="${escapeAttr(row.domain)}">
+            <td>${escapeHtml(row.domain)}</td>
+            <td>${formatNumber(row.scan_count)}</td>
+            <td>${formatNumber(row.total_sources)}</td>
+            <td>${formatNumber(row.total_links)}</td>
+            <td>${escapeHtml(formatDate(row.last_scan_at))}</td>
+          </tr>
+        `;
+      }).join("");
+      return `<div class="table-wrap"><table class="compact-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }
+
+    function renderDomainKpis(domainSummary, domainDetail, view) {
+      const cards = [
+        { label: "Scans", value: domainSummary.scan_count || 0 },
+        { label: "Sources", value: domainSummary.total_sources || 0 },
+        { label: "Target Links", value: view === "targets" ? domainDetail?.target_count ?? domainSummary.total_links ?? 0 : domainSummary.total_links ?? 0, view: "targets" },
+        { label: "Crawled URLs", value: domainDetail?.crawled_count ?? 0, view: "crawled" }
+      ];
+      return cards.map((card) => {
+        const content = `
+          <div class="kpi-label">${escapeHtml(card.label)}</div>
+          <div class="kpi-value">${formatNumber(card.value)}</div>
+        `;
+        if (!card.view) return `<div class="kpi">${content}</div>`;
+        return `<button class="kpi kpi-button ${view === card.view ? "active" : ""}" type="button" data-dashboard-domain-view="${card.view}">${content}</button>`;
+      }).join("");
+    }
+
+    function renderPager(view, total, offset, limit, shown) {
+      const start = total ? offset + 1 : 0;
+      const end = total ? Math.min(offset + shown, total) : 0;
+      const page = Math.floor(offset / limit) + 1;
+      const pages = Math.max(1, Math.ceil(total / limit));
+      return `
+        <div class="pager">
+          <span>${formatNumber(start)}-${formatNumber(end)} of ${formatNumber(total)} · page ${formatNumber(page)} / ${formatNumber(pages)}</span>
+          <button class="button" type="button" data-dashboard-page="${view}:prev" ${offset <= 0 ? "disabled" : ""}>Prev</button>
+          <button class="button" type="button" data-dashboard-page="${view}:next" ${offset + limit >= total ? "disabled" : ""}>Next</button>
+        </div>
+      `;
+    }
+
+    function renderDashboardDomainDetail(selectedFeature, selectedDomain, filters, domainDetail, isLoading) {
+      const featureId = selectedFeature.id;
+      const feature = FEATURES[featureId];
+      const logo = feature.logo || "/assets/LazyDorking-logo.webp";
+      const view = filters.view || "targets";
+      const domainSummary = domainDetail?.domain
+        || (state.dashboardDetails[featureId]?.domains || []).find((row) => row.domain === selectedDomain)
+        || {};
+      const kpis = renderDomainKpis(domainSummary, domainDetail, view);
+      const shell = (content) => `
+        <div class="dashboard-hero">
+          <div class="feature-head">
+            <img src="${escapeAttr(logo)}" alt="">
+            <div>
+              <h1>${escapeHtml(selectedFeature.label)} / ${escapeHtml(selectedDomain)}</h1>
+              <div class="history-meta">Domain scan results${domainSummary.last_scan_at ? ` from ${escapeHtml(formatDate(domainSummary.last_scan_at))}` : ""}</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="button" type="button" id="backDashboardOverview">Back</button>
+            <button class="button" type="button" id="refreshDashboardDomain">Refresh</button>
+          </div>
+        </div>
+        <div class="dashboard-kpis">${kpis}</div>
+        ${content}
+      `;
+      if (isLoading && !domainDetail) {
+        return shell(`<section class="detail-card"><div class="empty">Loading domain detail</div></section>`);
+      }
+      if (view === "crawled") {
+        const crawledUrls = domainDetail?.crawled_urls || [];
+        const crawlRows = crawledUrls.map((row) => ({
+          status: row.crawl_status,
+          source_url: row.source_url,
+          final_url: row.final_url,
+          hits: `${formatNumber(row.platform_hits)} / ${formatNumber(row.account_hits)}`,
+          http_code: row.http_code ?? "",
+          crawled_at: formatDate(row.crawled_at)
+        }));
+        return shell(`
+          <section class="detail-card">
+            <div class="section-head">
+              <h3>Crawled URLs</h3>
+              <span class="history-meta">${formatNumber(crawledUrls.length)} shown of ${formatNumber(domainDetail?.crawled_count || 0)}</span>
+            </div>
+            ${renderDashboardTable(["status", "source_url", "final_url", "hits", "http_code", "crawled_at"], crawlRows, "No crawled URLs for this domain")}
+            ${renderPager("crawled", domainDetail?.crawled_count || 0, domainDetail?.offset || 0, domainDetail?.limit || DASHBOARD_PAGE_SIZE, crawledUrls.length)}
+          </section>
+        `);
+      }
+      const resultOptions = feature.options.map(([value, label]) => (
+        `<option value="${escapeAttr(value)}" ${filters.resultType === value ? "selected" : ""}>${escapeHtml(label)}</option>`
+      )).join("");
+      const statusFilter = featureId === "blh" ? `
+        <select id="dashboardDomainStatus">
+          ${["", "broken", "alive", "redirect", "blocked", "timeout", "unknown"].map((value) => (
+            `<option value="${value}" ${filters.status === value ? "selected" : ""}>${value || "Any status"}</option>`
+          )).join("")}
+        </select>
+      ` : "";
+      const targetLinks = domainDetail?.target_links || [];
+      const targetRows = targetLinks.map((row) => ({
+        type: row.type,
+        target_url: row.target_url,
+        status: row.status || row.pattern || "",
+        http_code: row.http_code ?? "",
+        source_url: row.source_url,
+        found_at: formatDate(row.found_at)
+      }));
+      return shell(`
+        <section class="detail-card">
+          <div class="section-head">
+            <h3>Target Links Found</h3>
+            <span class="history-meta">${formatNumber(domainDetail?.target_count || 0)} total</span>
+          </div>
+          <div class="dashboard-filter">
+            <input id="dashboardDomainQuery" type="search" placeholder="Filter target links" value="${escapeAttr(filters.q)}">
+            <select id="dashboardResultType">
+              <option value="">Any ${escapeHtml(feature.optionLabel.toLowerCase())}</option>
+              ${resultOptions}
+            </select>
+            ${statusFilter}
+          </div>
+          ${renderDashboardTable(["type", "target_url", "status", "http_code", "source_url", "found_at"], targetRows, "No target links for this domain")}
+          ${renderPager("targets", domainDetail?.target_count || 0, domainDetail?.offset || 0, domainDetail?.limit || DASHBOARD_PAGE_SIZE, targetLinks.length)}
+        </section>
+      `);
+    }
+
+    function renderDashboardTable(columns, rows, emptyText, compact = false) {
+      if (!rows.length) return `<div class="empty">${escapeHtml(emptyText)}</div>`;
+      const head = columns.map((column) => `<th>${escapeHtml((COLUMN_LABELS[column] || column).replaceAll("_", " "))}</th>`).join("");
+      const body = rows.map((row) => {
+        const cells = columns.map((column) => {
+          const value = row[column] ?? "";
+          if (column.endsWith("_url") && value) {
+            return `<td><a href="${escapeAttr(value)}" target="_blank" rel="noopener noreferrer">${escapeHtml(value)}</a></td>`;
+          }
+          if (column === "status" && STATUS_BADGES.has(String(value))) {
+            return `<td><span class="badge ${escapeAttr(value)}">${escapeHtml(value)}</span></td>`;
+          }
+          return `<td>${escapeHtml(value)}</td>`;
+        }).join("");
+        return `<tr>${cells}</tr>`;
+      }).join("");
+      return `<div class="table-wrap"><table class="${compact ? "compact-table" : ""}"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }
+
+    function renderResultsTable(rows) {
+      const feature = cfg();
+      if (!rows.length) return `<div class="empty">No results</div>`;
+      const head = feature.columns.map((column) => `<th>${escapeHtml(COLUMN_LABELS[column] || column)}</th>`).join("");
+      const body = rows.map((row) => {
+        const cells = feature.columns.map((column) => {
+          const value = row[column] ?? "";
+          if (column.endsWith("_url") && value) {
+            return `<td><a href="${escapeAttr(value)}" target="_blank" rel="noopener noreferrer">${escapeHtml(value)}</a></td>`;
+          }
+          if (column === "status") {
+            if (state.feature === "blh" && row.id) {
+              const options = BLH_RESULT_STATUSES.map((status) => (
+                `<option value="${escapeAttr(status)}" ${value === status ? "selected" : ""}>${escapeHtml(status)}</option>`
+              )).join("");
+              return `<td><select class="status-select ${escapeAttr(value)}" data-result-id="${escapeAttr(row.id)}" title="Manual status override" aria-label="Manual status override">${options}</select></td>`;
+            }
+            return `<td><span class="badge ${escapeAttr(value)}">${escapeHtml(value)}</span></td>`;
+          }
+          return `<td>${escapeHtml(value)}</td>`;
+        }).join("");
+        return `<tr>${cells}</tr>`;
+      }).join("");
+      return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }
+
+    function bindResultStatusEditors() {
+      document.querySelectorAll("[data-result-id]").forEach((select) => {
+        select.onchange = () => updateResultStatus(select);
+      });
+    }
+
+    function renderTerminal() {
+      const feature = state.settings ? null : cfg();
+      const logs = state.detail && feature ? state.detail.logs || [] : [];
+      if (state.dashboard) {
+        $("#terminalStatus").textContent = "Dashboard";
+        $("#terminal").innerHTML = `<p class="terminal-line">No scan selected</p>`;
+        return;
+      }
+      $("#terminalStatus").textContent = state.detail ? `${logs.length} lines` : "Idle";
+      if (!logs.length) {
+        $("#terminal").innerHTML = `<p class="terminal-line">No logs</p>`;
+        return;
+      }
+      $("#terminal").innerHTML = logs.map((entry) => {
+        const message = entry.message || "";
+        const lower = message.toLowerCase();
+        const tone = lower.includes("error") ? "is-error"
+          : lower.includes("[found]") ? "is-found"
+          : lower.includes("done") || lower.includes("saved") ? "is-done"
+          : lower.includes("[filter]") ? "is-filter"
+          : lower.includes("[debug]") ? "is-debug"
+          : "";
+        return `<p class="terminal-line ${tone}"><span class="terminal-tag">[${feature.tag}]</span> <span class="terminal-date">${escapeHtml(formatDate(entry.created_at))}</span> <span class="terminal-text">${escapeHtml(message)}</span></p>`;
+      }).join("");
+      $("#terminal").scrollTop = $("#terminal").scrollHeight;
+    }
+
+    function filteredResults() {
+      const query = state.resultQuery.trim().toLowerCase();
+      return state.results.filter((row) => {
+        if (state.statusFilter && row.status !== state.statusFilter) return false;
+        if (!query) return true;
+        return Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(query));
+      });
+    }
+
+    async function submitScan(event) {
+      event.preventDefault();
+      unlockNotifySound();
+      const feature = cfg();
+      const selected = Array.from(state.selections[state.feature]);
+      if (!selected.length) {
+        setStatus(`Select ${feature.optionLabel.toLowerCase()}`);
+        return;
+      }
+      const domain = $("#domainInput").value.trim();
+      const body = { domain, [feature.payloadKey]: selected };
+      if (state.feature === "bac") body.include_dorking = $("#includeDorking").checked;
+      if (state.feature === "cred") body.active_bruteforce = $("#activeBruteforce").checked;
+
+      setStatus("Creating scan...");
+      try {
+        const resp = await fetch(`${feature.endpoint}/scans`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.error || "Scan failed");
+        state.selectedScanId[state.feature] = data.scan_id;
+        await loadScans();
+        await selectScan(data.scan_id);
+        setStatus("Scan queued");
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function loadScans(keepSelection = false) {
+      if (state.settings || state.dashboard) return;
+      await loadFeatureScans(state.feature, { keepSelection, renderCurrent: true, notify: true });
+    }
+
+    function applyFeatureScans(featureId, scans, notify = true) {
+      const previous = state.scanStatusById[featureId] || {};
+      const next = {};
+      const doneScans = [];
+      for (const scan of scans) {
+        const oldStatus = previous[scan.id];
+        next[scan.id] = scan.status;
+        if (notify && oldStatus && !FINAL_STATUSES.has(oldStatus) && scan.status === "done") {
+          doneScans.push(scan);
+          const visibleSelected = !state.dashboard && !state.settings && state.feature === featureId && state.selectedScanId[featureId] === scan.id;
+          if (!visibleSelected) state.unreadDoneScans[featureId].add(scan.id);
+        }
+      }
+      state.scanStatusById[featureId] = next;
+      state.scans[featureId] = scans;
+      if (doneScans.length) {
+        playDoneSound();
+        setStatus(`${FEATURES[featureId].label} scan done`);
+      }
+      renderActivity();
+    }
+
+    function notifyScanTransition(featureId, scan) {
+      const oldStatus = state.scanStatusById[featureId]?.[scan.id];
+      if (oldStatus && !FINAL_STATUSES.has(oldStatus) && scan.status === "done") {
+        playDoneSound();
+        setStatus(`${FEATURES[featureId].label} scan done`);
+      }
+      state.scanStatusById[featureId] = {
+        ...(state.scanStatusById[featureId] || {}),
+        [scan.id]: scan.status
+      };
+    }
+
+    async function loadFeatureScans(featureId, options = {}) {
+      const { keepSelection = false, renderCurrent = false, notify = true } = options;
+      const feature = FEATURES[featureId];
+      try {
+        const resp = await fetch(`${feature.endpoint}/scans`);
+        if (!resp.ok) throw new Error("Failed loading scans");
+        const scans = await resp.json();
+        applyFeatureScans(featureId, scans, notify);
+        if (!renderCurrent || state.feature !== featureId || state.settings || state.dashboard) return;
+        const selectedId = state.selectedScanId[featureId];
+        const selectedExists = selectedId && state.scans[featureId].some((scan) => scan.id === selectedId);
+        if (selectedExists && (!state.detail || state.detail.id !== selectedId)) {
+          await selectScan(selectedId, true);
+          return;
+        }
+        if ((!keepSelection || !selectedExists) && state.scans[featureId][0]) {
+          state.selectedScanId[featureId] = state.scans[featureId][0].id;
+          await selectScan(state.selectedScanId[featureId], true);
+          return;
+        }
+        renderSidebar();
+        renderWorkspace();
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    function startActivityPolling() {
+      clearInterval(state.activityPollTimer);
+      state.activityPollTimer = setInterval(() => {
+        for (const featureId of Object.keys(FEATURES)) {
+          loadFeatureScans(featureId, {
+            keepSelection: true,
+            renderCurrent: featureId === state.feature && !state.dashboard && !state.settings,
+            notify: true
+          });
+        }
+      }, 3000);
+    }
+
+    async function loadInitialScans() {
+      for (const featureId of Object.keys(FEATURES)) {
+        await loadFeatureScans(featureId, {
+          keepSelection: featureId !== state.feature,
+          renderCurrent: featureId === state.feature,
+          notify: false
+        });
+      }
+    }
+
+    async function loadDashboardStats() {
+      try {
+        const resp = await fetch("/api/dashboard");
+        if (!resp.ok) throw new Error("Failed loading dashboard");
+        state.dashboardStats = await resp.json();
+        if (state.dashboard) {
+          renderSidebar();
+          renderWorkspace();
+          renderTerminal();
+        }
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function loadDashboardFeatureDetail(featureId) {
+      try {
+        const resp = await fetch(`/api/dashboard/${encodeURIComponent(featureId)}`);
+        if (!resp.ok) throw new Error("Failed loading feature dashboard");
+        const detail = await resp.json();
+        state.dashboardDetails[featureId] = detail;
+        const selectedDomain = state.dashboardSelectedDomain[featureId];
+        if (selectedDomain && !detail.domains.some((row) => row.domain === selectedDomain)) {
+          state.dashboardSelectedDomain[featureId] = "";
+        }
+        if (state.dashboard && state.dashboardFeature === featureId) {
+          renderWorkspace();
+          if (state.dashboardSelectedDomain[featureId]) {
+            loadDashboardDomainDetail(featureId);
+          }
+        }
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    function selectDashboardDomain(domain) {
+      const filters = dashboardDomainFilters(state.dashboardFeature);
+      filters.view = "targets";
+      state.dashboardSelectedDomain[state.dashboardFeature] = domain;
+      loadDashboardDomainDetail(state.dashboardFeature);
+    }
+
+    function queueDashboardDomainLoad() {
+      clearTimeout(state.dashboardFilterTimer);
+      state.dashboardFilterTimer = setTimeout(() => {
+        loadDashboardDomainDetail(state.dashboardFeature);
+      }, 250);
+    }
+
+    async function loadDashboardDomainDetail(featureId) {
+      const domain = state.dashboardSelectedDomain[featureId];
+      if (!domain) return;
+      const filters = dashboardDomainFilters(featureId);
+      const key = dashboardDomainKey(featureId, domain, filters);
+      const view = filters.view || "targets";
+      const page = view === "crawled" ? filters.crawledPage || 0 : filters.targetPage || 0;
+      const params = new URLSearchParams({
+        limit: String(DASHBOARD_PAGE_SIZE),
+        offset: String(page * DASHBOARD_PAGE_SIZE),
+        view
+      });
+      if (view === "targets") {
+        if (filters.q) params.set("q", filters.q);
+        if (filters.resultType) params.set("result_type", filters.resultType);
+        if (filters.status) params.set("status", filters.status);
+      }
+      state.dashboardDomainLoadingKey = key;
+      if (state.dashboard && state.dashboardFeature === featureId) {
+        renderWorkspace();
+      }
+      try {
+        const resp = await fetch(`/api/dashboard/${encodeURIComponent(featureId)}/domains/${encodeURIComponent(domain)}?${params.toString()}`);
+        const detail = await resp.json();
+        if (!resp.ok) throw new Error(detail.detail || "Failed loading domain detail");
+        state.dashboardDomainDetails[key] = detail;
+        if (state.dashboardDomainLoadingKey === key) state.dashboardDomainLoadingKey = "";
+        if (state.dashboard && state.dashboardFeature === featureId) {
+          renderWorkspace();
+        }
+      } catch (error) {
+        if (state.dashboardDomainLoadingKey === key) state.dashboardDomainLoadingKey = "";
+        setStatus(error.message);
+        if (state.dashboard && state.dashboardFeature === featureId) {
+          renderWorkspace();
+        }
+      }
+    }
+
+    async function selectScan(scanId, silent = false) {
+      const feature = cfg();
+      state.selectedScanId[state.feature] = scanId;
+      state.unreadDoneScans[state.feature]?.delete(scanId);
+      renderActivity();
+      try {
+        const [detailResp, resultsResp] = await Promise.all([
+          fetch(`${feature.endpoint}/scans/${encodeURIComponent(scanId)}`),
+          fetch(`${feature.endpoint}/scans/${encodeURIComponent(scanId)}/results`)
+        ]);
+        const detail = await detailResp.json();
+        const results = await resultsResp.json();
+        if (!detailResp.ok) throw new Error(detail.detail || detail.error || "Scan not found");
+        if (!resultsResp.ok) throw new Error("Results failed");
+        notifyScanTransition(state.feature, detail);
+        state.detail = detail;
+        state.results = Array.isArray(results) ? results : [];
+        const scans = state.scans[state.feature] || [];
+        const idx = scans.findIndex((scan) => scan.id === detail.id);
+        if (idx >= 0) scans[idx] = { ...scans[idx], ...detail };
+        renderSidebar();
+        renderWorkspace();
+        renderTerminal();
+        managePolling();
+        if (!silent) setStatus("Scan loaded");
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function updateResultStatus(select) {
+      const resultId = select.dataset.resultId;
+      const previous = state.results.find((row) => String(row.id) === String(resultId))?.status || "";
+      const next = select.value;
+      select.disabled = true;
+      try {
+        const resp = await fetch(`${cfg().endpoint}/results/${encodeURIComponent(resultId)}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: next })
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.error || "Status update failed");
+        state.results = state.results.map((row) => (
+          String(row.id) === String(resultId) ? { ...row, status: data.status } : row
+        ));
+        setStatus(`Status changed to ${data.status}`);
+        renderResultTableMount();
+      } catch (error) {
+        select.value = previous;
+        setStatus(error.message);
+      } finally {
+        select.disabled = false;
+      }
+    }
+
+    function managePolling() {
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+      const scan = selectedScan();
+      if (!scan || FINAL_STATUSES.has(scan.status)) return;
+      state.pollTimer = setInterval(() => {
+        const id = state.selectedScanId[state.feature];
+        if (id) selectScan(id, true);
+      }, 1500);
+    }
+
+    async function pauseScan() {
+      const scan = selectedScan();
+      if (!scan) return;
+      try {
+        const resp = await fetch(`${cfg().endpoint}/scans/${encodeURIComponent(scan.id)}/pause`, { method: "POST" });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.error || "Pause failed");
+        setStatus(data.status);
+        await selectScan(scan.id, true);
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function continueScan() {
+      const scan = selectedScan();
+      if (!scan) return;
+      try {
+        const resp = await fetch(`${cfg().endpoint}/scans/${encodeURIComponent(scan.id)}/continue`, { method: "POST" });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.error || "Continue failed");
+        setStatus(data.status);
+        await selectScan(scan.id, true);
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function stopScan() {
+      const scan = selectedScan();
+      if (!scan) return;
+      try {
+        const resp = await fetch(`${cfg().endpoint}/scans/${encodeURIComponent(scan.id)}/stop`, { method: "POST" });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.error || "Stop failed");
+        setStatus(data.status);
+        await selectScan(scan.id, true);
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    async function deleteScan() {
+      const scan = selectedScan();
+      if (!scan) return;
+      if (!confirm(`Delete scan ${scan.id}?`)) return;
+      try {
+        const resp = await fetch(`${cfg().endpoint}/scans/${encodeURIComponent(scan.id)}`, { method: "DELETE" });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.detail || data.error || "Delete failed");
+        state.selectedScanId[state.feature] = "";
+        state.detail = null;
+        state.results = [];
+        setStatus(data.status);
+        await loadScans(true);
+        renderTerminal();
+      } catch (error) {
+        setStatus(error.message);
+      }
+    }
+
+    initSelections();
+    render();
+    loadDashboardStats();
+    loadInitialScans();
+    startActivityPolling();
+  </script>
+</body>
+</html>

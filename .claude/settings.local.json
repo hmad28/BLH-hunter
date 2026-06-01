@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(python -m unittest test_main.py -v)",
+      "PowerShell(git init *)"
+    ]
+  }
+}
