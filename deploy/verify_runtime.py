@@ -51,7 +51,10 @@ async def check(base):
     assert page.status == 200
 
     # Synthetic PAT syntax, not an issued credential. Only rule/line evidence is returned.
-    body = 'fetch("/api/read"); const token = "ghp_0123456789abcdefghijklmnopqrstuvwxyz";'
+    import secrets
+    import string
+    synthetic = 'ghp_' + ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(36))
+    body = 'fetch("/api/read"); const token = "' + synthetic + '";'
     out = await analyze_content(Page('https://example.com/app.js', 200, body,
                                 {'content-type': 'application/javascript'}),
                                 ScanConfig(domain='example.com', js_analysis=True, secret_signals=True), 0)

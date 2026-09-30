@@ -41,6 +41,9 @@ services:
     restart: unless-stopped
   worker:
     image: blh-hunter-v2:${BLH_RELEASE:-local}
+    init: true
+    security_opt:
+      - seccomp=./deploy/chromium-seccomp.json
     shm_size: 256mb
     environment: *runtime
     command: ["celery", "-A", "lazy_dorking.v2.tasks:app", "worker", "--loglevel=INFO", "--concurrency=2"]
