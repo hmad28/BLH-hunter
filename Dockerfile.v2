@@ -1,0 +1,21 @@
+FROM python:3.12-slim AS tools
+COPY deploy/install_tools.py /tmp/install_tools.py
+RUN python /tmp/install_tools.py
+
+FROM golang:1.26-bookworm AS jsluice
+ENV GOMAXPROCS=2 GOFLAGS=-p=2
+RUN go install github.com/BishopFox/jsluice/cmd/jsluice@0ddfab153e060a9eeaded4d8669233f7c071e7e4
+
+FROM python:3.12-slim
+WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/browsers
+COPY requirements.txt requirements-v2.txt ./
+RUN pip install --no-cache-dir -r requirements-v2.txt \
+    && playwright install --with-deps chromium
+RUN useradd --create-home blh
+RUN chmod -R a+rX /opt/browsers
+COPY lazy_dorking ./lazy_dorking
+COPY --from=tools /opt/recon/ /usr/local/bin/
+COPY --from=jsluice /go/bin/jsluice /usr/local/bin/jsluice
+USER blh
+CMD ["uvicorn", "lazy_dorking.v2.app:app", "--host", "0.0.0.0", "--port", "8000"]

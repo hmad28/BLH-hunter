@@ -4,3 +4,10 @@ __pycache__/
 .test_blh_hunter_*.db
 blh_hunter.db
 blh_*.csv
+blh_v2.db*
+.venv/
+storage/
+celerybeat-schedule*
+.pytest_cache/
+.playwright-cli/
+output/playwright/

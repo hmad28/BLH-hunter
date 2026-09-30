@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>BLH Hunter — Recon workspace</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, sans-serif;
+        background: #111518;
+        color: #e3e9e8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      header {
+        padding: 24px 32px;
+        border-bottom: 1px solid #334044;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0;
+      }
+      h2 {
+        font-size: 18px;
+      }
+      a {
+        color: #9cdec8;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 310px minmax(0, 1fr);
+        max-width: 1500px;
+        margin: auto;
+        min-height: 85vh;
+      }
+      aside {
+        padding: 24px;
+        border-right: 1px solid #334044;
+      }
+      section {
+        padding: 24px 32px;
+        min-width: 0;
+      }
+      label {
+        display: block;
+        margin: 14px 0 5px;
+        color: #b7c5c5;
+        font-size: 13px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        border: 1px solid #425052;
+        border-radius: 5px;
+        padding: 9px;
+        background: #1c2428;
+        color: inherit;
+      }
+      input:not([type="checkbox"]),
+      select {
+        width: 100%;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        border-color: #a3dcca;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      .primary {
+        background: #b8e7d1;
+        color: #102b20;
+        margin-top: 20px;
+        width: 100%;
+      }
+      .muted,
+      small {
+        color: #99aaaa;
+        font-size: 13px;
+      }
+      .choices {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+      }
+      .choices label {
+        margin: 3px 0;
+        font-size: 12px;
+      }
+      .scan {
+        display: block;
+        width: 100%;
+        text-align: left;
+        margin: 8px 0;
+      }
+      .scan.active {
+        border-color: #a3dcca;
+      }
+      .scan small {
+        display: block;
+        margin-top: 4px;
+      }
+      .metrics {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 22px 0;
+      }
+      .metric {
+        border-left: 2px solid #7dc4aa;
+        padding: 4px 18px;
+      }
+      .metric strong {
+        font-size: 25px;
+        display: block;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .tablewrap {
+        overflow: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 13px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid #334044;
+        text-align: left;
+        padding: 12px 8px;
+        vertical-align: top;
+      }
+      th {
+        color: #aebaba;
+      }
+      td.url {
+        min-width: 240px;
+        max-width: 500px;
+        overflow-wrap: anywhere;
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        color: #becbce;
+      }
+      summary {
+        cursor: pointer;
+        color: #a3dcca;
+      }
+      #error {
+        color: #ffb3a8;
+        white-space: pre-wrap;
+      }
+      #logs {
+        max-height: 250px;
+        overflow: auto;
+      }
+      .pager {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-top: 14px;
+      }
+      .tag {
+        padding: 3px 7px;
+        border: 1px solid #425052;
+        border-radius: 3px;
+        font-size: 11px;
+      }
+      details {
+        margin: 10px 0;
+      }
+      .hidden {
+        display: none;
+      }
+      @media (max-width: 850px) {
+        main {
+          display: block;
+        }
+        aside {
+          border-right: 0;
+          border-bottom: 1px solid #334044;
+        }
+        header,
+        section {
+          padding: 20px;
+        }
+        .choices {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>BLH Hunter <span class="tag">V2</span></h1>
+        <small>Discovery · Crawling · Evidence</small>
+      </div>
+      <a href="/docs">API docs</a>
+    </header>
+    <main>
+      <aside>
+        <h2>New scan</h2>
+        <form id="form">
+          <label for="domain">Root domain</label
+          ><input
+            id="domain"
+            required
+            placeholder="example.com"
+            autocomplete="off"
+          />
+          <label for="engine">Crawler</label
+          ><select id="engine">
+            <option value="crawlee">Crawlee HTTP</option>
+            <option value="native">Native HTTP</option>
+          </select>
+          <label
+            ><input type="checkbox" id="browser" /> Render likely JavaScript
+            shells</label
+          >
+          <label for="budget">Page budget</label
+          ><input id="budget" type="number" value="500" min="1" max="20000" />
+          <details>
+            <summary>Optional analysis</summary>
+            <label for="prober">Host probing</label>
+            <select id="prober">
+              <option value="native">Native HTTP</option>
+              <option value="pd-httpx">ProjectDiscovery httpx</option>
+              <option value="none">Disabled</option>
+            </select>
+            <label
+              ><input type="checkbox" id="js-analysis" /> JavaScript endpoints
+              (jsluice)</label
+            >
+            <label
+              ><input type="checkbox" id="secret-signals" /> Redacted secret
+              signals (Gitleaks)</label
+            >
+            <label
+              ><input type="checkbox" id="exposure-validation" /> Selected
+              exposure checks (Nuclei)</label
+            >
+            <p class="muted">
+              Requires the selected CLI tools on the worker. Secret values are
+              not displayed or verified.
+            </p>
+          </details>
+          <details open>
+            <summary>BLH platforms</summary>
+            <div id="platforms" class="choices"></div>
+          </details>
+          <details>
+            <summary>Collaboration services</summary>
+            <div id="services" class="choices"></div>
+          </details>
+          <details>
+            <summary>Exposure categories</summary>
+            <div id="categories" class="choices"></div>
+          </details>
+          <details>
+            <summary>Discovery providers</summary>
+            <div id="providers" class="choices"></div>
+            <p class="muted">
+              Choose gau or native archives. External tools must be installed on
+              the worker.
+            </p>
+          </details>
+          <button class="primary" type="submit">Queue scan</button>
+        </form>
+        <p class="muted">
+          Scans run in a separate worker and retain checkpoints across restarts.
+        </p>
+        <h2>Recent scans</h2>
+        <div id="scans"></div>
+      </aside>
+      <section>
+        <p id="error" role="alert"></p>
+        <div id="empty">
+          <h2>Recon workspace</h2>
+          <p class="muted">
+            Queue a scan or select one from the history. Findings include source
+            evidence and validation reasons.
+          </p>
+        </div>
+        <div id="detail" class="hidden">
+          <h2 id="title"></h2>
+          <p id="state" class="muted" aria-live="polite"></p>
+          <div class="actions">
+            <button data-action="pause">Pause</button
+            ><button data-action="resume">Resume</button
+            ><button data-action="cancel">Cancel</button
+            ><button data-action="delete">Delete</button
+            ><button id="export">Export findings JSON</button>
+          </div>
+          <div id="metrics" class="metrics"></div>
+          <div class="actions">
+            <button id="findings-tab">Findings</button
+            ><button id="urls-tab">URL inventory</button>
+            <button id="assets-tab">Assets</button>
+          </div>
+          <p class="muted">
+            Candidates are not automatically confirmed vulnerabilities.
+            Previously seen targets are labeled.
+          </p>
+          <div class="tablewrap">
+            <table>
+              <thead id="head"></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button id="prev">Previous</button><span id="page"></span
+            ><button id="next">Next</button>
+          </div>
+          <h2>Scan events</h2>
+          <pre id="logs"></pre>
+        </div>
+      </section>
+    </main>
+    <script>
+      const $ = (s) => document.querySelector(s);
+      let selected = null,
+        offset = 0,
+        view = "findings",
+        refreshing = false;
+      let historySignature = "",
+        rowsSignature = "";
+      const esc = (s) =>
+        String(s ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      async function api(path, options = {}) {
+        const r = await fetch("/api/v2" + path, {
+          ...options,
+          headers: { "Content-Type": "application/json" },
+        });
+        const b = await r.json();
+        if (!r.ok)
+          throw Error(
+            typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail),
+          );
+        return b;
+      }
+      function error(e) {
+        $("#error").textContent = e.message || String(e);
+      }
+      function choices(id, items, defaults) {
+        $("#" + id).innerHTML = items
+          .map(
+            (x) =>
+              `<label><input type="checkbox" value="${esc(x)}" ${defaults.includes(x) ? "checked" : ""}> ${esc(x)}</label>`,
+          )
+          .join("");
+      }
+      function values(id) {
+        return [...document.querySelectorAll("#" + id + " input:checked")].map(
+          (x) => x.value,
+        );
+      }
+      async function history() {
+        const list = await api("/scans");
+        const signature = JSON.stringify([list, selected]);
+        if (historySignature === signature) return;
+        historySignature = signature;
+        $("#scans").innerHTML = list
+          .map(
+            (s) =>
+              `<button class="scan ${s.id === selected ? "active" : ""}" data-id="${s.id}">${esc(s.domain)}<small>${esc(s.state)} · ${new Date(s.created_at * 1000).toLocaleString()}</small></button>`,
+          )
+          .join("");
+        document.querySelectorAll("[data-id]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              selected = b.dataset.id;
+              offset = 0;
+              refresh().catch(error);
+            }),
+        );
+      }
+      async function detail() {
+        if (!selected) return;
+        const sid = selected,
+          v = view,
+          o = offset;
+        let s, rows;
+        try {
+          [s, rows] = await Promise.all([
+            api("/scans/" + sid),
+            api(`/scans/${sid}/${v}?limit=50&offset=${o}`),
+          ]);
+        } catch (e) {
+          if (sid !== selected) return;
+          throw e;
+        }
+        if (sid !== selected || v !== view || o !== offset) return;
+        $("#empty").classList.add("hidden");
+        $("#detail").classList.remove("hidden");
+        $("#title").textContent = s.domain;
+        const active = [
+          "QUEUED",
+          "DISCOVERING",
+          "PROBING",
+          "CRAWLING",
+          "VALIDATING",
+        ].includes(s.state);
+        $('[data-action="pause"]').disabled = !active;
+        $('[data-action="resume"]').disabled = s.state !== "PAUSED";
+        $('[data-action="cancel"]').disabled = !active && s.state !== "PAUSED";
+        $("#state").textContent =
+          s.state +
+          " · " +
+          Object.entries(s.jobs)
+            .map(([k, n]) => `${n} ${k}`)
+            .join(" / ");
+        $("#metrics").innerHTML = [
+          ["Hosts", s.hosts],
+          ["URLs", s.urls],
+          ["Pages", s.pages],
+          ["New findings", s.new_findings],
+          ["Already seen", s.already_seen_targets],
+        ]
+          .map(
+            ([k, n]) =>
+              `<div class="metric"><strong>${n}</strong><small>${k}</small></div>`,
+          )
+          .join("");
+        $("#logs").textContent = s.events
+          .map(
+            (e) =>
+              new Date(e.created_at * 1000).toLocaleTimeString() +
+              " " +
+              e.message,
+          )
+          .join("\n");
+        $("#head").innerHTML =
+          v === "findings"
+            ? "<tr><th>Target / evidence</th><th>Type</th><th>Validation</th><th>Review</th></tr>"
+            : v === "assets"
+              ? "<tr><th>Host</th><th>HTTP</th><th>Engine</th><th>Metadata</th></tr>"
+              : "<tr><th>URL</th><th>Host</th><th>Sources</th><th>State</th></tr>";
+        const nextRowsSignature = JSON.stringify([v, rows]);
+        if (rowsSignature !== nextRowsSignature) {
+          rowsSignature = nextRowsSignature;
+          $("#rows").innerHTML =
+            rows
+              .map((r) =>
+                v === "findings"
+                  ? `<tr><td class="url">${esc(r.url)} ${r.is_new ? "" : '<span class="tag">already seen</span>'}<details><summary>Evidence (${r.evidence.length})</summary><pre>${esc(JSON.stringify(r.evidence, null, 2))}</pre></details></td><td>${esc(r.kind)}<br><small>${esc(r.category)}</small></td><td>${esc(r.status)} · ${esc(r.confidence)}<br><small>${esc(r.reason)}</small></td><td><select aria-label="Review finding" data-review="${r.id}">${["unreviewed", "confirmed", "false_positive", "needs_review"].map((x) => `<option ${r.review === x ? "selected" : ""}>${x}</option>`).join("")}</select></td></tr>`
+                  : v === "assets"
+                    ? `<tr><td>${esc(r.host)}</td><td>${esc(r.data.http_code ?? r.data.status_code ?? "Pending")}</td><td>${esc(r.data.engine ?? "")}</td><td><details><summary>Probe evidence</summary><pre>${esc(JSON.stringify(r.data, null, 2))}</pre></details></td></tr>`
+                    : `<tr><td class="url">${esc(r.url)}</td><td>${esc(r.host)}</td><td>${esc(r.providers.join(", "))}</td><td>${esc(r.state)}</td></tr>`,
+              )
+              .join("") ||
+            '<tr><td colspan="4">No records in this view.</td></tr>';
+          document.querySelectorAll("[data-review]").forEach(
+            (e) =>
+              (e.onchange = () =>
+                api("/findings/" + e.dataset.review + "/review", {
+                  method: "PATCH",
+                  body: JSON.stringify({ state: e.value }),
+                }).catch(error)),
+          );
+        }
+        $("#prev").disabled = o === 0;
+        $("#next").disabled = rows.length < 50;
+        $("#page").textContent =
+          `Rows ${rows.length ? o + 1 : 0}–${o + rows.length}`;
+      }
+      async function refresh() {
+        if (refreshing) return;
+        refreshing = true;
+        try {
+          await history();
+          await detail();
+        } finally {
+          refreshing = false;
+        }
+      }
+      $("#form").onsubmit = async (e) => {
+        e.preventDefault();
+        $("#error").textContent = "";
+        const button = e.submitter;
+        button.disabled = true;
+        try {
+          const s = await api("/scans", {
+            method: "POST",
+            body: JSON.stringify({
+              domain: $("#domain").value,
+              engine: $("#engine").value,
+              browser: $("#browser").checked,
+              prober: $("#prober").value,
+              js_analysis: $("#js-analysis").checked,
+              secret_signals: $("#secret-signals").checked,
+              exposure_validation: $("#exposure-validation").checked,
+              max_pages: Number($("#budget").value),
+              platforms: values("platforms"),
+              services: values("services"),
+              categories: values("categories"),
+              providers: values("providers"),
+            }),
+          });
+          selected = s.scan_id;
+          offset = 0;
+          await refresh();
+        } catch (e) {
+          error(e);
+        } finally {
+          button.disabled = false;
+        }
+      };
+      document.querySelectorAll("[data-action]").forEach(
+        (b) =>
+          (b.onclick = async () => {
+            if (!selected) return;
+            const a = b.dataset.action;
+            if (
+              a === "delete" &&
+              !confirm(
+                "Delete this scan, its jobs, pages and evidence permanently?",
+              )
+            )
+              return;
+            try {
+              await api(
+                "/scans/" + selected + (a === "delete" ? "" : "/" + a),
+                { method: a === "delete" ? "DELETE" : "POST" },
+              );
+              if (a === "delete") {
+                selected = null;
+                $("#detail").classList.add("hidden");
+                $("#empty").classList.remove("hidden");
+              }
+              await refresh();
+            } catch (e) {
+              error(e);
+            }
+          }),
+      );
+      $("#findings-tab").onclick = () => {
+        view = "findings";
+        offset = 0;
+        detail().catch(error);
+      };
+      $("#urls-tab").onclick = () => {
+        view = "urls";
+        offset = 0;
+        detail().catch(error);
+      };
+      $("#assets-tab").onclick = () => {
+        view = "assets";
+        offset = 0;
+        detail().catch(error);
+      };
+      $("#prev").onclick = () => {
+        offset = Math.max(0, offset - 50);
+        detail().catch(error);
+      };
+      $("#next").onclick = () => {
+        offset += 50;
+        detail().catch(error);
+      };
+      $("#export").onclick = async () => {
+        const sid = selected;
+        if (!sid) return;
+        try {
+          let all = [],
+            o = 0;
+          while (true) {
+            const batch = await api(
+              `/scans/${sid}/findings?limit=500&offset=${o}`,
+            );
+            all.push(...batch);
+            if (batch.length < 500) break;
+            o += 500;
+          }
+          const url = URL.createObjectURL(
+            new Blob([JSON.stringify(all, null, 2)], {
+              type: "application/json",
+            }),
+          );
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `blh-${sid}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch (e) {
+          error(e);
+        }
+      };
+      (async () => {
+        const c = await api("/capabilities");
+        choices("platforms", c.platforms, ["github", "instagram"]);
+        choices("services", c.services, []);
+        choices("categories", c.categories, []);
+        choices(
+          "providers",
+          ["sitemap", "wayback", "commoncrawl", "subfinder", "gau", "katana"],
+          ["sitemap", "wayback", "commoncrawl"],
+        );
+        await refresh();
+        setInterval(() => refresh().catch(error), 4000);
+      })().catch(error);
+    </script>
+  </body>
+</html>

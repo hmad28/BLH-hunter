@@ -1,5 +1,10 @@
 # BLH Hunter
 
+The new **v2 recon workspace** is available at `/v2`, with durable workers,
+checkpoint recovery, Crawlee adapters and an optional PostgreSQL/Celery deployment.
+See [v2 setup, migration and current limitations](docs/V2.md). Legacy endpoints
+and the original SQLite database remain available during migration.
+
 BLH Hunter is a local FastAPI + SQLite reconnaissance workspace for finding broken social/profile links, exposed third-party collaboration links, and sensitive configuration-style URLs across a target domain and its subdomains.
 
 The app is built for authorized security review. Use it only on assets you own or have explicit permission to test.

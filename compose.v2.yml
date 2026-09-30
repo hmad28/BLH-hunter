@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: blh
+      POSTGRES_PASSWORD: ${BLH_DB_PASSWORD:?Set BLH_DB_PASSWORD in your environment}
+      POSTGRES_DB: blh
+    volumes:
+      - blh_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blh"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+  api:
+    image: blh-hunter-v2:${BLH_RELEASE:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.v2
+    environment: &runtime
+      BLH_DATABASE_URL: ${BLH_DATABASE_URL:?Set PostgreSQL URL with URL-encoded password}
+      BLH_REDIS_URL: redis://redis:6379/0
+    ports:
+      - "127.0.0.1:8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v2/scans')"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+  worker:
+    image: blh-hunter-v2:${BLH_RELEASE:-local}
+    shm_size: 256mb
+    environment: *runtime
+    command: ["celery", "-A", "lazy_dorking.v2.tasks:app", "worker", "--loglevel=INFO", "--concurrency=2"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+  scheduler:
+    image: blh-hunter-v2:${BLH_RELEASE:-local}
+    environment: *runtime
+    command: ["celery", "-A", "lazy_dorking.v2.tasks:app", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  blh_pg:

@@ -1,0 +1,19 @@
+id: blh-git-config-content
+info:
+  name: Git configuration content at discovered URL
+  author: blh-hunter
+  severity: info
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}"
+    redirects: false
+    max-size: 1048576
+    matchers-condition: and
+    matchers:
+      - type: status
+        status: [200]
+      - type: word
+        part: body
+        words: ["[core]", "repositoryformatversion"]
+        condition: and
