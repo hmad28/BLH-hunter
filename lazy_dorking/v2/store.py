@@ -127,6 +127,9 @@ class Store:
                 state="QUEUED", created_at=time.time(), last_dispatch=0, last_host=""))
             for provider in ["roots"] + config.providers:
                 self.enqueue(con, sid, "discover", {"provider": provider}, provider)
+            if config.include_dorking:
+                for service in config.services:
+                    self.enqueue(con, sid, 'dork', {'service': service}, service)
             self.log(con, sid, "Scan queued. Start a worker to process persistent jobs.")
         return sid
 
@@ -209,7 +212,7 @@ class Store:
                     continue
                 # Discovery completes before crawling; validation follows crawling.
                 kinds = {j["kind"] for j in pending}
-                phase = next(k for k in ("discover", "probe", "crawl", "browser", "validate") if k in kinds)
+                phase = next(k for k in ("discover", "dork", "probe", "crawl", "browser", "validate") if k in kinds)
                 if phase == "crawl":
                     visited = con.scalar(select(func.count()).select_from(pages).where(pages.c.scan_id == sid))
                     in_flight = sum(j["state"] == "running" and j["kind"] == "crawl" for j in pending)
@@ -232,7 +235,7 @@ class Store:
                 con.execute(update(jobs).where(jobs.c.id == job["id"]).values(state="running", token=token,
                     lease_until=now + lease_seconds, attempts=job["attempts"] + 1))
                 con.execute(update(scans).where(scans.c.id == sid).values(last_host=host, last_dispatch=now,
-                    state={"discover": "DISCOVERING", "probe": "PROBING", "crawl": "CRAWLING", "browser": "CRAWLING", "validate": "VALIDATING"}[phase]))
+                    state={"discover": "DISCOVERING", "dork": "DISCOVERING", "probe": "PROBING", "crawl": "CRAWLING", "browser": "CRAWLING", "validate": "VALIDATING"}[phase]))
                 return {**job, "token": token, "config": scan["config"], "attempts": job["attempts"] + 1}
         return None
 
@@ -336,6 +339,10 @@ class Store:
                 if browser_count < config.browser_budget:
                     self.enqueue(con, sid, "browser", job["payload"], job["payload"]["url"], job["host"])
             if "validation" in output:
+                current = con.scalar(select(findings.c.data).where(findings.c.id == job['payload']['finding_id'])) or {}
+                if 'manual_status' in current:
+                    output['validation']['data'] = {**output['validation'].get('data', {}),
+                                                    'manual_status': current['manual_status']}
                 con.execute(update(findings).where(findings.c.id == job["payload"]["finding_id"])
                     .values(**output["validation"]))
             if "probe" in output:

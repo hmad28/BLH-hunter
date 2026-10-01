@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements-v2.txt \
 RUN useradd --create-home blh
 RUN chmod -R a+rX /opt/browsers
 COPY lazy_dorking ./lazy_dorking
+COPY index.html ./index.html
 COPY --from=tools /opt/recon/ /usr/local/bin/
 COPY --from=jsluice /go/bin/jsluice /usr/local/bin/jsluice
 USER blh

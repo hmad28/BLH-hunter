@@ -19,6 +19,16 @@ log = logging.getLogger(__name__)
 async def execute(job, store):
     config = ScanConfig(**job["config"])
     payload = job["payload"]
+    if job['kind'] == 'dork':
+        import httpx
+        from ..bac.scanner import BAC_SERVICES, fetch_bing_dork_targets
+        async with httpx.AsyncClient() as client:
+            links, warnings = await fetch_bing_dork_targets(client, config.domain,
+                BAC_SERVICES[payload['service']], set(), set())
+        return {'findings': [{'finding': finding, 'evidence': {
+            'source_url': link['source_url'], 'anchor': link['anchor_text'], 'discovered_by': 'bing-dork'}}
+            for link in links for finding in classify(link['target_url'], config)],
+            'message': f"Dork supplement ({payload['service']}): {len(links)} candidates. " + '; '.join(warnings[:3])}
     if job["kind"] == "discover":
         provider = payload["provider"]
         seeds = await discover(provider, config.domain)

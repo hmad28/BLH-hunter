@@ -49,6 +49,70 @@ class DurablePipelineTests(unittest.TestCase):
     def scan(self, **kwargs):
         return self.store.create(ScanConfig(domain='example.com', providers=[], prober='none', **kwargs))
 
+    def test_classic_ui_all_features_use_durable_engine_and_controls(self):
+        from unittest.mock import patch
+        app.dependency_overrides[get_store] = lambda: self.store
+        client = TestClient(app)
+        self.assertIn('BAC', client.get('/').text)
+        self.assertIn('CRED', client.get('/').text)
+        caps = dict.fromkeys(['browser', 'gau', 'subfinder', 'jsluice', 'gitleaks', 'nuclei'], True)
+        for feature, selection, value in [('blh', 'platforms', 'github'),
+                ('bac', 'services', 'google_drive'), ('cred', 'categories', 'config')]:
+            with patch('lazy_dorking.v2.compat.capabilities', return_value=caps):
+                response = client.post(f'/api/{feature}/scans', json={'domain': 'example.com', selection: [value]})
+            self.assertEqual(response.status_code, 201, response.text)
+            sid = response.json()['scan_id']
+            config = self.store.get(sid)['config']
+            self.assertEqual(config['engine'], 'crawlee')
+            self.assertTrue(config['browser'])
+            self.assertTrue(config['js_analysis'])
+            self.assertIn('subfinder', config['providers'])
+            self.assertEqual(config[selection], [value])
+            for other in {'platforms', 'services', 'categories'} - {selection}:
+                self.assertEqual(config[other], [])
+            prefix = f'/api/{feature}/scans/{sid}'
+            self.assertEqual(client.post(prefix + '/pause').json()['status'], 'paused')
+            self.assertEqual(client.post(prefix + '/continue').json()['status'], 'pending')
+            self.assertEqual(client.post(prefix + '/stop').json()['status'], 'cancelled')
+            self.assertEqual(client.get(prefix).json()['engine'], 'v2')
+            self.assertEqual(client.get('/api/dashboard').json()['features'][['blh','bac','cred'].index(feature)]['scan_count'], 1)
+            self.assertEqual(client.delete(prefix).status_code, 200)
+            self.assertEqual(client.get(prefix).status_code, 404)
+
+    def test_classic_results_dashboard_export_and_manual_override_survive_worker(self):
+        app.dependency_overrides[get_store] = lambda: self.store
+        client = TestClient(app)
+        sid = self.scan(platforms=['github'])
+        self.store.complete(self.store.claim(), {'findings': [{'finding': {
+            'kind': 'blh', 'category': 'github', 'url': 'https://github.com/fixture'},
+            'evidence': {'source_url': 'https://example.com/about', 'anchor': 'Team'}}]})
+        result = client.get(f'/api/blh/scans/{sid}/results').json()[0]
+        self.assertEqual(result['source_url'], 'https://example.com/about')
+        self.assertEqual(client.get(f'/api/bac/scans/{sid}').status_code, 404)
+        self.assertEqual(client.patch(f"/api/blh/results/{result['id']}/status", json={'status':'broken'}).status_code, 200)
+        job = self.store.claim()
+        self.store.complete(job, {'validation': {'status': 'reachable', 'confidence': 'medium', 'reason': 'HTTP 200', 'data': {}}})
+        self.assertEqual(client.get(f'/api/blh/scans/{sid}/results').json()[0]['status'], 'broken')
+        self.assertIn('https://github.com/fixture', client.get(f'/api/blh/scans/{sid}/export').text)
+        detail = client.get('/api/dashboard/blh/domains/example.com?result_type=github&status=broken').json()
+        self.assertEqual(detail['target_count'], 1)
+        self.assertEqual(detail['target_links'][0]['anchor_text'], 'Team')
+        self.assertEqual(client.get('/api/dashboard/blh/domains/example.com?q=missing').json()['target_count'], 0)
+
+    def test_optional_dork_is_durable_and_dispatched(self):
+        from unittest.mock import AsyncMock, patch
+        from lazy_dorking.v2.worker import execute
+        sid = self.store.create(ScanConfig(domain='example.com', platforms=[], services=['google_drive'],
+                                          providers=[], include_dorking=True))
+        self.store.complete(self.store.claim(), {})
+        job = self.store.claim()
+        self.assertEqual(job['kind'], 'dork')
+        with patch('lazy_dorking.bac.scanner.fetch_bing_dork_targets', new=AsyncMock(return_value=([], []))):
+            output = asyncio.run(execute(job, self.store))
+        self.assertTrue(self.store.complete(job, output))
+        self.store.claim()
+        self.assertEqual(self.store.get(sid)['state'], 'COMPLETED')
+
     def seeded(self, **kwargs):
         sid = self.scan(**kwargs)
         j = self.store.claim()

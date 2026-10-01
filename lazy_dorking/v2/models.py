@@ -22,6 +22,7 @@ class ScanConfig(BaseModel):
     js_analysis: bool = False
     secret_signals: bool = False
     exposure_validation: bool = False
+    include_dorking: bool = False
     max_pages: int = Field(default=500, ge=1, le=20000)
     max_urls: int = Field(default=10000, ge=10, le=100000)
     max_depth: int = Field(default=4, ge=0, le=20)

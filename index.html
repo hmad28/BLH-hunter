@@ -1480,7 +1480,7 @@
         ? `<label class="checkline"><input id="includeDorking" type="checkbox"> Include dorking</label>`
         : "";
       const credExtra = state.feature === "cred"
-        ? `<label class="checkline"><input id="activeBruteforce" type="checkbox"> Active brute-force</label>`
+        ? `<label class="checkline" title="Not implemented; discovered resources are analyzed by the v2 exposure engine"><input id="activeBruteforce" type="checkbox" disabled> Active brute-force (not available)</label>`
         : "";
 
       $("#sidebar").innerHTML = `
