@@ -14,8 +14,8 @@ RUN pip install --no-cache-dir -r requirements-v2.txt \
     && playwright install --with-deps chromium
 RUN useradd --create-home blh
 RUN chmod -R a+rX /opt/browsers
-COPY lazy_dorking ./lazy_dorking
-COPY index.html ./index.html
+COPY --chown=blh:blh lazy_dorking ./lazy_dorking
+COPY --chown=blh:blh index.html ./index.html
 COPY --from=tools /opt/recon/ /usr/local/bin/
 COPY --from=jsluice /go/bin/jsluice /usr/local/bin/jsluice
 USER blh
