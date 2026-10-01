@@ -210,24 +210,30 @@ class Store:
                     self.log(con, sid, f"{'Finished with failed jobs' if failed else 'Completed'}: {outcome} "
                              f"already_seen_targets={seen_count}; source URLs skipped as already crawled={covered}.")
                     continue
-                # Discovery completes before crawling; validation follows crawling.
-                kinds = {j["kind"] for j in pending}
-                phase = next(k for k in ("discover", "dork", "probe", "crawl", "browser", "validate") if k in kinds)
-                if phase == "crawl":
-                    visited = con.scalar(select(func.count()).select_from(pages).where(pages.c.scan_id == sid))
-                    in_flight = sum(j["state"] == "running" and j["kind"] == "crawl" for j in pending)
-                    if visited >= scan["config"]["max_pages"]:
-                        con.execute(update(jobs).where(jobs.c.scan_id == sid, jobs.c.kind == "crawl",
-                            jobs.c.state == "queued").values(state="skipped", error="Crawl budget reached"))
-                        self.log(con, sid, "Crawl budget reached; remaining source jobs skipped.")
-                        continue
-                    if visited + in_flight >= scan["config"]["max_pages"]:
-                        continue
                 busy_hosts = {j["host"] for j in pending if j["state"] == "running" and j["host"]}
-                candidates = [j for j in pending if j["state"] == "queued" and j["kind"] == phase
+                candidates = [j for j in pending if j["state"] == "queued"
                               and (not j["host"] or j["host"] not in busy_hosts)]
+                # A host waits only for its own probe, never the whole asset inventory.
+                probing_hosts = {j['host'] for j in pending if j['kind'] == 'probe'}
+                candidates = [j for j in candidates if j['kind'] != 'crawl' or j['host'] not in probing_hosts]
+                visited = con.scalar(select(func.count()).select_from(pages).where(pages.c.scan_id == sid))
+                in_flight = sum(j['state'] == 'running' and j['kind'] == 'crawl' for j in pending)
+                if visited >= scan['config']['max_pages'] and any(j['kind'] == 'crawl' and j['state'] == 'queued' for j in pending):
+                    con.execute(update(jobs).where(jobs.c.scan_id == sid, jobs.c.kind == 'crawl',
+                        jobs.c.state == 'queued').values(state='skipped', error='Crawl budget reached'))
+                    self.log(con, sid, 'Crawl budget reached; remaining source jobs skipped.')
+                if visited + in_flight >= scan['config']['max_pages']:
+                    candidates = [j for j in candidates if j['kind'] != 'crawl']
                 if not candidates:
                     continue
+                phase = next(k for k in ('discover', 'dork', 'validate', 'browser', 'crawl', 'probe')
+                             if any(j['kind'] == k for j in candidates))
+                candidates = [j for j in candidates if j['kind'] == phase]
+                if phase == 'probe':
+                    # Prioritize submitted root/www assets over alphabetical archive hosts.
+                    roots = [j for j in candidates if j['host'] in {scan['domain'], 'www.' + scan['domain']}]
+                    if roots:
+                        candidates = roots
                 hosts = sorted({j["host"] for j in candidates})
                 host = next((h for h in hosts if h > (scan["last_host"] or "")), hosts[0])
                 job = next(j for j in candidates if j["host"] == host)

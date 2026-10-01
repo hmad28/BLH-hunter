@@ -1596,6 +1596,7 @@
             <a class="button icon-button" href="${escapeAttr(exportHref)}" title="Export CSV" aria-label="Export CSV" ${scan ? "" : "aria-disabled=\"true\""}>${iconSvg("download")}</a>
           </div>
         </div>
+        ${scan?.engine === 'v2' && scan.progress ? `<div class="history-meta" role="status">${escapeHtml(scan.phase)} · ${formatNumber(scan.progress.hosts)} hosts · ${formatNumber(scan.progress.urls)} URLs · ${formatNumber(scan.progress.pages)} pages crawled · ${formatNumber(scan.progress.jobs.done)} jobs done · ${formatNumber(scan.progress.jobs.running)} running · ${formatNumber(scan.progress.jobs.queued)} queued</div>` : ""}
         ${scan ? `${filter}<div id="resultTableMount">${renderResultsTable(rows)}</div>` : `<div class="empty">Select or run a scan</div>`}
       `;
 

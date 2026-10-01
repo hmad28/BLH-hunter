@@ -49,6 +49,8 @@ def classic_scan(row):
             'status': STATES.get(row['state'], 'running'), 'phase': row['state'],
             'created_at': iso(row['created_at']), 'finished_at': iso(row['finished_at']),
             'total_sources': row.get('pages', 0), 'total_links': row.get('result_count', 0),
+            'progress': {'pages': row.get('pages', 0), 'urls': row.get('urls', 0),
+                         'hosts': row.get('hosts', 0), 'jobs': row.get('jobs', {})},
             'engine': 'v2', 'logs': [{'message': e['message'], 'created_at': iso(e['created_at'])}
                                   for e in reversed(row.get('events', []))]}
 

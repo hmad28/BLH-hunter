@@ -120,6 +120,29 @@ class DurablePipelineTests(unittest.TestCase):
                                        {'url': 'https://b.example.com/', 'provider': 'roots'}]})
         return sid
 
+    def test_ready_host_crawls_without_waiting_for_other_host_probes(self):
+        sid = self.store.create(ScanConfig(domain='example.com', providers=[], prober='native'))
+        self.store.complete(self.store.claim(), {'urls': [
+            {'url': 'https://aaa.example.com/', 'provider': 'archive'},
+            {'url': 'https://example.com/', 'provider': 'roots'},
+            {'url': 'https://zzz.example.com/', 'provider': 'archive'}]})
+        root = self.store.claim()
+        self.assertEqual((root['kind'], root['host']), ('probe', 'example.com'))
+        self.store.complete(root, {'probe': {'http_code': 200}})
+        crawl = self.store.claim()
+        self.assertEqual((crawl['kind'], crawl['host']), ('crawl', 'example.com'))
+        other = self.store.claim()
+        self.assertEqual(other['kind'], 'probe')
+        self.assertNotEqual(other['host'], 'example.com')
+
+    def test_running_discovery_does_not_block_ready_crawl(self):
+        self.store.create(ScanConfig(domain='example.com', providers=['gau'], prober='none'))
+        self.store.complete(self.store.claim(), {'urls': [{'url': 'https://example.com/', 'provider': 'roots'}]})
+        archive = self.store.claim()
+        self.assertEqual(archive['kind'], 'discover')
+        crawl = self.store.claim()
+        self.assertEqual(crawl['kind'], 'crawl')
+
     def test_restart_reclaims_unfinished_job_and_rejects_old_token(self):
         sid = self.seeded()
         old = self.store.claim(lease_seconds=-1)
