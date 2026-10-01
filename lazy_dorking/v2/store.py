@@ -80,6 +80,15 @@ def key(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def job_label(job):
+    payload = job['payload']
+    raw = payload.get('url')
+    if raw:
+        parsed = urlparse(raw)
+        return f'{parsed.scheme}://{parsed.hostname}{parsed.path}'[:250]
+    return payload.get('provider') or payload.get('service') or job['kind']
+
+
 class Store:
     def __init__(self, url=None):
         url = url or os.getenv("BLH_DATABASE_URL") or f"sqlite:///{Path(__file__).resolve().parents[2] / 'blh_v2.db'}"
@@ -130,7 +139,7 @@ class Store:
             if config.include_dorking:
                 for service in config.services:
                     self.enqueue(con, sid, 'dork', {'service': service}, service)
-            self.log(con, sid, "Scan queued. Start a worker to process persistent jobs.")
+            self.log(con, sid, f"[QUEUED] {config.domain} | engine={config.engine} | page budget={config.max_pages} | waiting for worker")
         return sid
 
     def get(self, sid):
@@ -242,6 +251,7 @@ class Store:
                     lease_until=now + lease_seconds, attempts=job["attempts"] + 1))
                 con.execute(update(scans).where(scans.c.id == sid).values(last_host=host, last_dispatch=now,
                     state={"discover": "DISCOVERING", "dork": "DISCOVERING", "probe": "PROBING", "crawl": "CRAWLING", "browser": "CRAWLING", "validate": "VALIDATING"}[phase]))
+                self.log(con, sid, f"[{phase.upper()}] Started {job_label(job)} | attempt {job['attempts'] + 1}/3")
                 return {**job, "token": token, "config": scan["config"], "attempts": job["attempts"] + 1}
         return None
 
@@ -263,7 +273,8 @@ class Store:
                 return
             con.execute(update(jobs).where(jobs.c.id == job["id"]).values(
                 state="queued" if job["attempts"] < 3 else "failed", token=None, lease_until=None, error=error[:500]))
-            self.log(con, job["scan_id"], f"{job['kind']} attempt {job['attempts']}: {error[:300]}")
+            outcome = 'will retry' if job['attempts'] < 3 else 'failed after 3 attempts; other jobs continue'
+            self.log(con, job["scan_id"], f"[ERROR] {job['kind']} {job_label(job)} | {outcome} | {error[:300]}")
 
     def add_url(self, con, sid, config, url, provider, depth=0):
         try:
@@ -300,6 +311,9 @@ class Store:
             self.enqueue(con, sid, "crawl", {"url": url, "depth": depth}, url, host)
 
     def add_finding(self, con, sid, finding, proof):
+        if finding['kind'] == 'blh':
+            from .analyzers import target_identity
+            finding = {**finding, 'url': target_identity(finding['url'])}
         digest = key(finding["kind"] + ":" + finding["url"])
         fid = con.scalar(select(findings.c.id).where(findings.c.key == digest))
         is_new = fid is None
@@ -316,6 +330,7 @@ class Store:
             con.execute(insert(evidence).values(id=uid(), scan_id=sid, finding_id=fid, key=proof_key, data=proof))
         if is_new:
             self.enqueue(con, sid, "validate", {"finding_id": fid, **finding}, fid, urlparse(finding["url"]).hostname)
+        return not exists
 
     def complete(self, job, output):
         config = ScanConfig(**job["config"])
@@ -338,8 +353,13 @@ class Store:
                 con.execute(update(urls).where(urls.c.scan_id == sid, urls.c.key == digest).values(state="visited"))
             for item in output.get("urls", []):
                 self.add_url(con, sid, config, **item)
+            new_targets = 0
             for item in output.get("findings", []):
-                self.add_finding(con, sid, item["finding"], item["evidence"])
+                if self.add_finding(con, sid, item["finding"], item["evidence"]):
+                    new_targets += 1
+                    if new_targets <= 10:
+                        self.log(con, sid, f"[FOUND] {item['finding']['category']} | " +
+                                 job_label({'kind': 'finding', 'payload': item['finding']}))
             if output.get("browser"):
                 browser_count = con.scalar(select(func.count()).select_from(jobs).where(jobs.c.scan_id == sid, jobs.c.kind == "browser"))
                 if browser_count < config.browser_budget:
@@ -356,7 +376,20 @@ class Store:
                             .values(data=output['probe'], probed_at=time.time()))
             con.execute(update(jobs).where(jobs.c.id == job["id"]).values(state="done", token=None, lease_until=None))
             if output.get("message"):
-                self.log(con, sid, output["message"])
+                self.log(con, sid, f"[{job['kind'].upper()}] {output['message']}")
+            if 'page' in output:
+                p = output['page']
+                repeated = len(output.get('findings', [])) - new_targets
+                self.log(con, sid, f"[{job['kind'].upper()}] {job_label(job)} | HTTP {p.get('http_code') or '-'} | "
+                         f"{len(output.get('urls', []))} extracted URLs | {new_targets} new targets | {repeated} repeated targets merged" +
+                         (f" | {p['error']}" if p.get('error') else ''))
+            elif 'probe' in output:
+                p = output['probe']
+                self.log(con, sid, f"[PROBE] {job_label(job)} | HTTP {p.get('http_code', p.get('status_code')) or '-'} | "
+                         f"{p.get('error') or p.get('reason') or 'host check complete'}")
+            elif 'validation' in output:
+                self.log(con, sid, f"[VALIDATE] {job_label(job)} | {output['validation']['status']} | "
+                         f"{output['validation'].get('reason', '')}")
             return True
 
     def results(self, sid, limit=100, offset=0):

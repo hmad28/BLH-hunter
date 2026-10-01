@@ -12,6 +12,7 @@ from sqlalchemy import select, func, update
 from .api import get_store
 from .models import ScanConfig
 from .providers import capabilities
+from .analyzers import target_identity
 from .store import scans, pages, findings, references, evidence
 from ..db import FEATURE_STATS
 
@@ -62,8 +63,11 @@ def feature_scans(store, feature):
                 if belongs(r, feature)]
         counts = dict(con.execute(select(pages.c.scan_id, func.count()).group_by(pages.c.scan_id)).all())
         kinds = ['cred', 'secret'] if feature == 'cred' else [feature]
-        results = dict(con.execute(select(references.c.scan_id, func.count()).join(findings)
-                       .where(findings.c.kind.in_(kinds)).group_by(references.c.scan_id)).all())
+        identities = {}
+        for sid, category, url in con.execute(select(references.c.scan_id, findings.c.category, findings.c.url).join(findings)
+                                             .where(findings.c.kind.in_(kinds))):
+            identities.setdefault(sid, set()).add((category, target_identity(url) if feature == 'blh' else url))
+        results = {sid: len(values) for sid, values in identities.items()}
     return [classic_scan({**r, 'pages': counts.get(r['id'], 0), 'result_count': results.get(r['id'], 0)}) for r in rows]
 
 
@@ -93,7 +97,25 @@ def result_rows(store, feature, sids):
             'http_code': data.get('http_code'), 'final_url': data.get('final_url', r['url']),
             'error_reason': r['reason'], 'confidence': r['confidence'], 'evidence': ev,
             'checked_at': iso(r['created_at']), 'extracted_at': iso(r['created_at']), 'found_at': iso(r['created_at'])})
-    return output
+    # One row per target even in domain history spanning multiple scans. Keep evidence.
+    grouped = {}
+    for row in output:
+        identity = target_identity(row['target_url']) if feature == 'blh' else row['target_url']
+        identity_key = (row['type'], identity)
+        if identity_key not in grouped:
+            grouped[identity_key] = {**row, 'target_url': identity, 'scan_ids': [], 'sources': [], 'evidence': []}
+        item = grouped[identity_key]
+        if row['scan_id'] not in item['scan_ids']:
+            item['scan_ids'].append(row['scan_id'])
+        for proof in row['evidence']:
+            if proof not in item['evidence']:
+                item['evidence'].append(proof)
+            source = proof.get('source_url')
+            if source and source not in item['sources']:
+                item['sources'].append(source)
+        item['source_count'] = len(item['sources'])
+        item['scan_count'] = len(item['scan_ids'])
+    return list(grouped.values())
 
 
 class ClassicRequest(BaseModel):
@@ -204,9 +226,14 @@ def feature_summary(store, feature):
         for name in r[FIELDS[feature]]:
             item = usage.setdefault(name, {'name': name, 'count': 0, 'last_used_at': r['created_at']})
             item['count'] += 1
+    kinds = ['cred', 'secret'] if feature == 'cred' else [feature]
+    with store.engine.connect() as con:
+        unique_count = len({(category, target_identity(url) if feature == 'blh' else url)
+            for category, url in con.execute(select(findings.c.category, findings.c.url).join(references)
+                .where(references.c.scan_id.in_([r['id'] for r in rows]), findings.c.kind.in_(kinds)))})
     return {**{k: spec[k] for k in ('id', 'label', 'title', 'usage_label')},
-        'scan_count': len(rows), 'result_count': sum(r['total_links'] for r in rows),
-        'source_count': sum(r['total_sources'] for r in rows), 'link_count': sum(r['total_links'] for r in rows),
+        'scan_count': len(rows), 'result_count': unique_count,
+        'source_count': sum(r['total_sources'] for r in rows), 'link_count': unique_count,
         'status_counts': dict(Counter(r['status'] for r in rows)),
         'last_used_at': rows[0]['created_at'] if rows else '',
         'usage': sorted(usage.values(), key=lambda r: -r['count'])[:8],

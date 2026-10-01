@@ -1,5 +1,6 @@
 """Crawlee adapters consume leased pages; BLH owns the durable frontier."""
 import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from datetime import timedelta
 
@@ -12,6 +13,7 @@ async def crawlee_fetch(url, domain, *, fetch_fn=fetch):
     from crawlee.crawlers import HttpCrawler
     from crawlee.http_clients import HttpClient, HttpCrawlingResult
     from crawlee.storage_clients import MemoryStorageClient
+    from crawlee.storages import RequestQueue
 
     captured = []
 
@@ -49,7 +51,9 @@ async def crawlee_fetch(url, domain, *, fetch_fn=fetch):
         async def cleanup(self):
             pass
 
-    crawler = HttpCrawler(http_client=ScopedClient(), storage_client=MemoryStorageClient(),
+    storage = MemoryStorageClient()
+    queue = await RequestQueue.open(alias='blh-' + uuid.uuid4().hex, storage_client=storage)
+    crawler = HttpCrawler(http_client=ScopedClient(), storage_client=storage, request_manager=queue,
         max_requests_per_crawl=1, max_request_retries=0, use_session_pool=False,
         concurrency_settings=ConcurrencySettings(min_concurrency=1, max_concurrency=1, desired_concurrency=1),
         ignore_http_error_status_codes=range(400, 600), configure_logging=False,
@@ -60,7 +64,10 @@ async def crawlee_fetch(url, domain, *, fetch_fn=fetch):
         # Never enqueue links here: only the persistent BLH frontier may do that.
         pass
 
-    await crawler.run([url])
+    try:
+        await crawler.run([url])
+    finally:
+        await queue.drop()
     if not captured:
         raise RuntimeError("Crawlee completed without a response")
     return captured[-1]
@@ -70,10 +77,13 @@ async def browser_fetch(url, domain):
     from crawlee import ConcurrencySettings
     from crawlee.crawlers import PlaywrightCrawler
     from crawlee.storage_clients import MemoryStorageClient
+    from crawlee.storages import RequestQueue
 
     await public_address(url)
     captured = []
-    crawler = PlaywrightCrawler(storage_client=MemoryStorageClient(), headless=True,
+    storage = MemoryStorageClient()
+    queue = await RequestQueue.open(alias='blh-' + uuid.uuid4().hex, storage_client=storage)
+    crawler = PlaywrightCrawler(storage_client=storage, request_manager=queue, headless=True,
         browser_type="chromium", max_requests_per_crawl=1, max_request_retries=0,
         browser_new_context_options={"service_workers": "block", "accept_downloads": False},
         use_session_pool=False, configure_logging=False,
@@ -109,7 +119,10 @@ async def browser_fetch(url, domain):
         captured.append(Page(context.page.url, response.status if response else 0, body[:1_000_000],
             {"content-type": "text/html"}, truncated=len(body) > 1_000_000, engine="browser"))
 
-    await crawler.run([url])
+    try:
+        await crawler.run([url])
+    finally:
+        await queue.drop()
     if not captured:
         raise RuntimeError("Browser produced no page; check Chromium installation and worker logs")
     return captured[-1]

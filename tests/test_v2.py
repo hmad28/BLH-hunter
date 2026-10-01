@@ -120,6 +120,27 @@ class DurablePipelineTests(unittest.TestCase):
                                        {'url': 'https://b.example.com/', 'provider': 'roots'}]})
         return sid
 
+    def test_terminal_reports_work_and_history_groups_shared_targets(self):
+        app.dependency_overrides[get_store] = lambda: self.store
+        client = TestClient(app)
+        ids = []
+        for index, url in enumerate(['http://twitter.com/NASA/', 'https://x.com/nasa?utm_source=web']):
+            sid = self.scan(platforms=['twitter'])
+            ids.append(sid)
+            self.store.complete(self.store.claim(), {'findings': [{'finding': {
+                'kind': 'blh', 'category': 'twitter', 'url': url}, 'evidence': {
+                'source_url': f'https://example.com/page-{index}', 'anchor': 'Follow'}}]})
+            self.store.control(sid, 'cancel')
+        result = client.get('/api/dashboard/blh/domains/example.com').json()
+        self.assertEqual(result['target_count'], 1)
+        self.assertEqual(result['target_links'][0]['source_count'], 2)
+        self.assertEqual(result['target_links'][0]['scan_count'], 2)
+        self.assertEqual(result['target_links'][0]['target_url'], 'https://x.com/nasa')
+        messages = [e['message'] for e in self.store.get(ids[-1])['events']]
+        self.assertTrue(any('[DISCOVER] Started roots' in m for m in messages))
+        self.assertTrue(any('[FOUND]' in m for m in messages))
+        self.assertFalse(any('utm_source' in m for m in messages))
+
     def test_ready_host_crawls_without_waiting_for_other_host_probes(self):
         sid = self.store.create(ScanConfig(domain='example.com', providers=[], prober='native'))
         self.store.complete(self.store.claim(), {'urls': [
@@ -427,6 +448,24 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(result.engine, 'crawlee')
         self.assertIn('About', result.body)
 
+    def test_crawlee_repeated_url_across_worker_event_loops_is_not_suppressed(self):
+        from lazy_dorking.v2.engines import crawlee_fetch
+        calls = []
+        async def fake(url, domain):
+            calls.append(url)
+            return Page(url, 200, '<html>fresh</html>', {'content-type': 'text/html'})
+        for _ in range(5):
+            page = asyncio.run(crawlee_fetch('https://repeat.example/same', 'repeat.example', fetch_fn=fake))
+            self.assertEqual(page.status, 200)
+        self.assertEqual(len(calls), 5)
+
+    def test_social_identity_collapses_alias_case_and_tracking_but_not_resource_ids(self):
+        from lazy_dorking.v2.analyzers import target_identity
+        for url in ['http://www.twitter.com/NASA/', 'https://x.com/nasa?utm_source=web',
+                    'https://mobile.twitter.com/Nasa']:
+            self.assertEqual(target_identity(url), 'https://x.com/nasa')
+        self.assertNotEqual(target_identity('https://bit.ly/AbC'), target_identity('https://bit.ly/abc'))
+
     def test_browser_adapter_renders_javascript_on_local_fixture(self):
         import threading
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -445,7 +484,9 @@ class AnalyzerTests(unittest.TestCase):
         thread.start()
         try:
             with patch('lazy_dorking.v2.engines.public_address', new=AsyncMock()):
-                page = asyncio.run(browser_fetch(f'http://127.0.0.1:{server.server_port}/', '127.0.0.1'))
+                for _ in range(2):
+                    page = asyncio.run(browser_fetch(f'http://127.0.0.1:{server.server_port}/', '127.0.0.1'))
+                    self.assertIn('href="/rendered"', page.body)
             self.assertIn('href="/rendered"', page.body)
             self.assertEqual(page.engine, 'browser')
         finally:

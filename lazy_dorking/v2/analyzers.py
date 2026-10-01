@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from urllib.parse import urljoin, urlparse
 
 from ..shared import canonical_target_url, canonical_url, host_matches_any, url_in_scope, detect_access_challenge
-from ..blh.scanner import (PLATFORM_DOMAINS, is_non_account_url, is_twitter_account_not_found,
+from ..blh.scanner import (PLATFORM_DOMAINS, ACCOUNT_PATH_PATTERNS, is_non_account_url, is_twitter_account_not_found,
                            is_facebook_page_not_found)
 from ..bac.scanner import BAC_SERVICES, is_allowed_bac_target
 from ..cred.scanner import match_sensitive_url
@@ -47,9 +47,12 @@ class Extractor(HTMLParser):
 def target_identity(url):
     url = canonical_target_url(url)
     parsed = urlparse(url)
-    if parsed.hostname == "twitter.com":
-        url = parsed._replace(netloc="x.com").geturl()
-    return url
+    host = {'twitter.com': 'x.com', 'mobile.twitter.com': 'x.com', 'mobile.x.com': 'x.com'}.get(parsed.hostname, parsed.hostname)
+    # Only known case-insensitive profile handles. Never fold resource IDs or invite codes.
+    pattern = ACCOUNT_PATH_PATTERNS.get(host)
+    if host in {'x.com', 'instagram.com', 'github.com'} and pattern and pattern.fullmatch(parsed.path):
+        return parsed._replace(scheme='https', netloc=host, path=parsed.path.lower(), query='', fragment='').geturl()
+    return parsed._replace(netloc=host).geturl()
 
 
 def classify(url, config):

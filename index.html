@@ -1895,7 +1895,9 @@
         status: row.status || row.pattern || "",
         http_code: row.http_code ?? "",
         source_url: row.source_url,
-        found_at: formatDate(row.found_at)
+        found_at: formatDate(row.found_at),
+        sources: row.source_count || 1,
+        scans: row.scan_count || 1
       }));
       return shell(`
         <section class="detail-card">
@@ -1911,7 +1913,7 @@
             </select>
             ${statusFilter}
           </div>
-          ${renderDashboardTable(["type", "target_url", "status", "http_code", "source_url", "found_at"], targetRows, "No target links for this domain")}
+          ${renderDashboardTable(["type", "target_url", "status", "http_code", "source_url", "sources", "scans", "found_at"], targetRows, "No target links for this domain")}
           ${renderPager("targets", domainDetail?.target_count || 0, domainDetail?.offset || 0, domainDetail?.limit || DASHBOARD_PAGE_SIZE, targetLinks.length)}
         </section>
       `);
@@ -1943,6 +1945,9 @@
       const body = rows.map((row) => {
         const cells = feature.columns.map((column) => {
           const value = row[column] ?? "";
+          if (column === "source_url" && row.sources?.length > 1) {
+            return `<td><details><summary>${formatNumber(row.source_count)} source pages</summary>${row.sources.map(source => `<div><a href="${escapeAttr(source)}" target="_blank" rel="noopener noreferrer">${escapeHtml(source)}</a></div>`).join("")}</details></td>`;
+          }
           if (column.endsWith("_url") && value) {
             return `<td><a href="${escapeAttr(value)}" target="_blank" rel="noopener noreferrer">${escapeHtml(value)}</a></td>`;
           }
@@ -1976,7 +1981,7 @@
         $("#terminal").innerHTML = `<p class="terminal-line">No scan selected</p>`;
         return;
       }
-      $("#terminalStatus").textContent = state.detail ? `${logs.length} lines` : "Idle";
+      $("#terminalStatus").textContent = state.detail ? `${state.detail.phase || state.detail.status} · latest ${logs.length} events` : "Idle";
       if (!logs.length) {
         $("#terminal").innerHTML = `<p class="terminal-line">No logs</p>`;
         return;
