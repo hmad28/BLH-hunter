@@ -4,6 +4,8 @@ __pycache__/
 .test_blh_hunter_*.db
 blh_hunter.db
 blh_*.csv
+nasa.json
+*.state.json
 blh_v2.db*
 .venv/
 storage/

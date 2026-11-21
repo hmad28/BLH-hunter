@@ -109,6 +109,124 @@ python main.py
 
 The app creates `blh_hunter.db` automatically when it starts.
 
+## Terminal Scanner (CLI)
+
+For a lightweight run with **no web UI and no database**, use the terminal
+scanner. It reuses the same crawl + link-check engine as the web app but keeps
+everything in memory and prints results straight to stdout. The only dependency
+is `httpx` (already in `requirements.txt`) — FastAPI, SQLite, and SQLAlchemy are
+not needed.
+
+```bash
+# scan all platforms on a domain
+python scan.py nasa.gov
+
+# only specific platforms
+python scan.py nasa.gov -p youtube,twitter,instagram
+
+# cap the crawl at 30 target links
+python scan.py example.com --max 30
+
+# deep mode: also pull slow passive seeds (Wayback, CommonCrawl, subdomain
+# sitemaps) for maximum coverage
+python scan.py example.com --deep
+
+# show only broken/non-alive links, export to JSON + CSV, quiet logs
+python scan.py example.com --broken-only --json out.json --csv out.csv -q
+```
+
+By default the scanner seeds only from the live sitemap/robots and crawls the
+root domain + subdomains — fast, and where almost all social/profile links
+actually live (headers/footers). `--deep` adds Wayback + CommonCrawl +
+subdomain-sitemap seeds for completeness, but those archive URLs are often slow
+or dead, so a deep run on a large domain is much slower.
+
+Equivalent module form: `python -m lazy_dorking.cli nasa.gov`.
+
+Each result line is printed as:
+
+```text
+[200] <source_page_url> [PLATFORM] <social_url> [STATUS]
+```
+
+The first bracket is the source page (a live, in-scope 200 HTML page); the last
+is the checked status of the social/profile link — an HTTP code like `[200]`
+when alive, otherwise a label like `[BROKEN]`, `[REDIRECT]`, `[BLOCKED]`,
+`[TIMEOUT]`, or `[UNKNOWN]`. Progress logs go to stderr, so piping stdout to a
+file keeps only the result lines.
+
+Key flags (`python scan.py --help` for the full list):
+
+| Flag | Purpose |
+| --- | --- |
+| `-p, --platforms` | Comma-separated platforms (default: all) |
+| `--deep` | Also pull slow passive seed sources for maximum coverage |
+| `--max N` | Stop the crawl after N target links |
+| `--timeout N` | Overall crawl time budget in seconds; stops with partial results (default: 300, `0` disables) |
+| `--state FILE` | Persist crawled sources + results to a JSON file; repeat runs skip already-crawled pages (incremental) |
+| `-c, --concurrency N` | Concurrent status checks (default: 10) |
+| `--broken-only` | Print only links that are not alive |
+| `--json FILE` / `--csv FILE` | Export full results |
+| `-v` / `-q` | Verbose crawl logs / quiet |
+
+### Large domains
+
+Big targets (e.g. `nasa.gov`) have thousands of pages and many slow/dead
+subdomains. The defaults already keep a run light:
+
+- The default run **skips** the passive seed sources, so you are not waiting on
+  slow/dead Wayback + CommonCrawl archive URLs. Only add `--deep` when you
+  specifically want that extra coverage and can afford the wait. Note the
+  seeding phase (including `--deep` sources) runs *before* the crawl and is
+  **not** covered by `--timeout`.
+- **`--timeout`** (default 300s) and **`--max`** bound the crawl itself, so it
+  stops with partial results instead of grinding through up to 2000 pages.
+
+Recommended first pass on a large domain:
+
+```bash
+python scan.py nasa.gov -p instagram,twitter --max 40 --timeout 120
+```
+
+Without `-v`, the crawl prints `[found] ...` and periodic `Crawling... visited=N`
+lines to stderr so it never looks frozen.
+
+### Incremental scans (`--state`)
+
+The CLI is stateless by default: each run starts fresh and re-crawls everything,
+so running the same command twice does the same work and returns the same links.
+That is intentional (no database), but on a big domain it means every run pays
+the full crawl cost.
+
+Pass `--state FILE` to make runs **incremental**. The file (plain JSON) records
+every source page crawled and every result found. On the next run with the same
+file, already-crawled pages are skipped and new findings are merged in, so repeat
+scans are near-instant and accumulate results over time:
+
+```bash
+# first run: full crawl, writes state
+python scan.py nasa.gov -p instagram,twitter --state nasa.json
+
+# later runs: skip already-crawled pages, only crawl/collect what's new
+python scan.py nasa.gov -p instagram,twitter --state nasa.json
+```
+
+Add `--new-only` to print just the links discovered in the current run (instead
+of the full accumulated set), which makes per-run progress obvious:
+
+```bash
+python scan.py nasa.gov -p instagram,twitter --state nasa.json --new-only
+```
+
+Use a separate state file per domain. Delete the file to force a fresh full scan.
+
+**Note on very large domains:** a single run is bounded by `--timeout`/`--max`,
+and a domain like `nasa.gov` has far more pages than one budget can crawl. With
+`--state`, each run crawls a *fresh batch* of not-yet-seen pages and accumulates
+new links, so coverage grows run over run — but an individual run still uses its
+full time budget. It is incremental, not instant, on huge sites. For a quick
+sample instead, use a small `--max`.
+
 ## Usage
 
 1. Open the web UI.
