@@ -164,6 +164,7 @@ Key flags (`python scan.py --help` for the full list):
 | `--max N` | Stop the crawl after N target links |
 | `--timeout N` | Overall crawl time budget in seconds; stops with partial results (default: 300, `0` disables) |
 | `--state FILE` | Persist crawled sources + results to a JSON file; repeat runs skip already-crawled pages (incremental) |
+| `--recheck` | Re-verify statuses of links already in `--state` without crawling (fixes false `broken` from throttling) |
 | `-c, --concurrency N` | Concurrent status checks (default: 10) |
 | `--broken-only` | Print only links that are not alive |
 | `--json FILE` / `--csv FILE` | Export full results |
@@ -242,6 +243,31 @@ python scan.py nasa.gov --max 5000 --timeout 0 --state nasa.json
 When a run prints `Hit the target cap (N)`, more links almost certainly exist —
 re-run with a higher `--max`. Adding more platforms (`-p` default is all) and
 `--deep` (passive seeds) widens coverage further.
+
+### Status accuracy on social platforms
+
+X/Twitter, Instagram, Facebook, YouTube and friends aggressively block bot and
+datacenter IPs. From a blocked IP they return anti-bot/challenge pages (often
+HTTP 200, or a generic "something went wrong") instead of a clean result, which
+can make **live** accounts look dead. The checker handles the common cases:
+
+- Genuine "account doesn't exist" pages → `broken`.
+- Ambiguous anti-bot / "content isn't available" pages → `blocked` (not broken).
+- Connection failures to these platforms → `unknown` (not broken).
+
+Heavy crawling (a long `--timeout 0` sweep hitting thousands of pages) makes the
+platforms throttle your IP, so a batch of checks right after can come back mostly
+`broken`/`blocked`. That is an IP/rate-limit artifact, not reality. When a run
+reports that most links are non-alive, re-verify later on a fresh connection
+without re-crawling:
+
+```bash
+python scan.py nasa.gov --state nasa.json --recheck
+```
+
+For bullet-proof status (rendering JavaScript, bypassing simple bot walls) you
+would need a headless browser (Playwright); that is deliberately out of scope for
+this lightweight CLI — use the web app / v2 workers for that.
 
 ## Usage
 

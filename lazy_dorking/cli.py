@@ -311,6 +311,41 @@ async def run_cli_scan(args) -> list[dict]:
             if r.get("target_url")
         }
 
+        # --recheck: re-verify the status of already-known links WITHOUT crawling.
+        # Useful after a run returned false "broken" due to IP throttling/anti-bot
+        # - run it later on a fresh connection to let statuses settle.
+        if args.recheck:
+            if not prior_results:
+                log.warn("--recheck needs an existing --state file with results.")
+                return [], set()
+            links = [
+                {
+                    "target_url": r["target_url"],
+                    "platform_domain": urlparse(r["target_url"]).hostname or "",
+                    "source_url": r.get("source_url", ""),
+                    "anchor_text": r.get("anchor_text", ""),
+                }
+                for r in prior_results
+                if r.get("target_url")
+            ]
+            log.step(f"Re-checking {len(links)} known link(s) (no crawl)...")
+            checks = await check_all(client, links, args.concurrency, log)
+            rechecked: list[dict] = []
+            for r in prior_results:
+                key = canonical_target_url(r["target_url"], ACCOUNT_PATH_PATTERNS)
+                chk = checks.get(key)
+                if chk:
+                    r = {**r, "status": chk.get("status", r.get("status")),
+                         "http_code": chk.get("http_code"),
+                         "final_url": chk.get("final_url", r.get("final_url")),
+                         "error_reason": chk.get("error_reason", "")}
+                rechecked.append(r)
+            if args.state:
+                save_state(args.state, domain, known_sources, rechecked, log)
+            return rechecked, {
+                canonical_target_url(r["target_url"], ACCOUNT_PATH_PATTERNS) for r in rechecked
+            }
+
         seed_urls = await collect_seeds(client, domain, log, passive=args.deep)
 
         # Record every page actually crawled this run, so state persists them and
@@ -558,6 +593,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--new-only", action="store_true",
         help="print only links newly found in this run (useful with --state)",
     )
+    p.add_argument(
+        "--recheck", action="store_true",
+        help="re-verify statuses of links already in --state without crawling "
+             "(use after false 'broken' results from IP throttling/anti-bot)",
+    )
     p.add_argument("--json", metavar="FILE", help="write full results to a JSON file")
     p.add_argument("--csv", metavar="FILE", help="write full results to a CSV file")
     p.add_argument("--no-color", action="store_true", help="disable ANSI colors")
@@ -603,6 +643,23 @@ def main(argv=None):
     print_rows(rows, args.broken_only, args.new_only, new_keys)
     if not args.quiet:
         print_summary(rows, time.time() - start)
+        # If almost everything came back non-alive, the IP was likely throttled
+        # by the platforms (common after a heavy crawl) - status checks on
+        # X/IG/FB/YT from a bot IP are unreliable. Nudge toward --recheck.
+        if rows:
+            bad = sum(1 for r in rows if r["status"] in ("broken", "blocked", "unknown"))
+            if bad >= max(5, int(0.8 * len(rows))):
+                tip = "python scan.py <domain> --state <file> --recheck"
+                print(
+                    _c(
+                        f"[!] {bad}/{len(rows)} links are non-alive. Social platforms "
+                        "often block bot/datacenter IPs (false 'broken'), especially "
+                        "after a big crawl. Re-verify later on a fresh connection:\n"
+                        f"    {tip}",
+                        C.YELLOW,
+                    ),
+                    file=sys.stderr,
+                )
 
     if args.json:
         write_json(args.json, rows)

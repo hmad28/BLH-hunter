@@ -34,6 +34,11 @@ PLATFORM_DOMAINS = {
     "flickr": ["flickr.com"],
 }
 
+SUBDOMAIN_SITEMAP_CANDIDATES = (
+    "www", "blog", "news", "media", "press", "shop", "store",
+    "support", "help", "docs", "dev", "api", "status",
+)
+
 
 def normalize_platforms_list(platforms) -> list[str]:
     return sorted({p for p in (platforms or []) if p in PLATFORM_DOMAINS})
@@ -140,18 +145,28 @@ BLOCKED_BODY_MARKERS = (
     "verify you are human",
     "unusual traffic",
 )
+# Markers that genuinely indicate a DELETED/missing account (safe to call broken).
 TWITTER_NOT_FOUND_MARKERS = (
     "this account doesn't exist",
     "this account doesn&apos;t exist",
-    "something went wrong, but don't fret",
-    "something went wrong. try reloading",
     "hmm...this page doesn't exist",
 )
+# Ambiguous anti-bot / generic error pages. X serves these (HTTP 200) to
+# datacenter/bot IPs even for LIVE accounts, so they must NOT be called broken -
+# they mean "could not verify" (blocked), not "account is gone".
+TWITTER_BLOCK_MARKERS = (
+    "something went wrong, but don't fret",
+    "something went wrong. try reloading",
+)
+# Facebook's unambiguous deleted-page text.
 FACEBOOK_NOT_FOUND_MARKERS = (
-    "this content isn't available right now",
-    "this content isn&apos;t available right now",
     "sorry, this page isn't available",
     "the link you followed may be broken",
+)
+# Facebook shows these to logged-out/bot visitors for live pages too -> ambiguous.
+FACEBOOK_BLOCK_MARKERS = (
+    "this content isn't available right now",
+    "this content isn&apos;t available right now",
     "this page isn't available right now",
     "konten ini tidak tersedia saat ini",
     "cometerrorroute",
@@ -174,6 +189,15 @@ def is_twitter_account_not_found(resp, host):
     return any(marker in body for marker in TWITTER_NOT_FOUND_MARKERS)
 
 
+def is_twitter_blocked(resp, host):
+    if host not in ("twitter.com", "x.com", "www.twitter.com", "www.x.com"):
+        return False
+    if resp.status_code != 200:
+        return False
+    body = (resp.text or "").lower()[:2000]
+    return any(marker in body for marker in TWITTER_BLOCK_MARKERS)
+
+
 def is_facebook_page_not_found(resp, host):
     if host not in ("facebook.com", "www.facebook.com", "fb.com", "www.fb.com"):
         return False
@@ -181,6 +205,15 @@ def is_facebook_page_not_found(resp, host):
         return False
     body = (resp.text or "").lower()[:2000]
     return any(marker in body for marker in FACEBOOK_NOT_FOUND_MARKERS)
+
+
+def is_facebook_blocked(resp, host):
+    if host not in ("facebook.com", "www.facebook.com", "fb.com", "www.fb.com"):
+        return False
+    if resp.status_code != 200:
+        return False
+    body = (resp.text or "").lower()[:2000]
+    return any(marker in body for marker in FACEBOOK_BLOCK_MARKERS)
 
 
 def is_facebook_account_not_found(resp, host):
@@ -364,6 +397,20 @@ async def wait_if_paused(pause_event=None, cancel_event=None) -> bool:
     return False
 
 
+async def fetch_subdomain_sitemap_batches(client, domain: str):
+    async def _fetch(sub: str):
+        host = f"{sub}.{domain}"
+        try:
+            urls = await fetch_sitemap_urls(client, host)
+        except Exception:
+            urls = []
+        return host, urls
+
+    tasks = [_fetch(sub) for sub in SUBDOMAIN_SITEMAP_CANDIDATES]
+    for task in asyncio.as_completed(tasks):
+        yield await task
+
+
 async def check_link(client, url):
     if url.startswith("http://"):
         url = "https://" + url[7:]
@@ -383,8 +430,11 @@ async def check_link(client, url):
             result["error_reason"] = "Too many redirects"
             return result
         except httpx.ConnectError as e:
-            result["status"] = "broken"
-            result["error_reason"] = f"Connect error: {str(e)[:80]}"
+            # These targets are all major platforms; a connection failure is
+            # almost always network/anti-bot (or IP throttling after heavy
+            # crawling), NOT a deleted account. Don't call it broken.
+            result["status"] = "unknown"
+            result["error_reason"] = f"Connection failed (network/block, not necessarily dead): {str(e)[:50]}"
             return result
         except Exception as e:
             result["status"] = "unknown"
@@ -409,6 +459,8 @@ async def check_link(client, url):
         )
         twitter_not_found = is_twitter_account_not_found(resp, final_host)
         facebook_not_found = is_facebook_page_not_found(resp, final_host)
+        twitter_blocked = is_twitter_blocked(resp, final_host)
+        facebook_blocked = is_facebook_blocked(resp, final_host)
         if code in (404, 410) or twitter_not_found or facebook_not_found:
             result["status"] = "broken"
             if twitter_not_found:
@@ -417,6 +469,11 @@ async def check_link(client, url):
                 result["error_reason"] = "Page does not exist (Facebook error page)"
             elif redirected:
                 result["error_reason"] = "Redirected to missing page"
+        elif twitter_blocked or facebook_blocked:
+            # 200-OK anti-bot / generic error page: cannot verify from a bot IP.
+            # Report as blocked (likely alive) rather than a false broken/alive.
+            result["status"] = "blocked"
+            result["error_reason"] = "Anti-bot/error page - status unverifiable (likely alive)"
         elif auth_redirect:
             result["status"] = "alive"
             result["error_reason"] = "Account exists (login redirect)"
@@ -475,14 +532,26 @@ async def run_scan(scan_id: str, domain: str, platforms: list,
             seed_urls.extend(sitemap)
             db_log_scan(scan_id, f"Sitemap: {len(sitemap)} seeds found", deleted_scans)
 
-            for sub in ("www", "blog", "news", "media", "press", "shop", "store", "support", "help", "docs", "dev", "api", "status"):
-                try:
-                    sub_sitemap = await fetch_sitemap_urls(client, f"{sub}.{domain}")
-                    seed_urls.extend(sub_sitemap)
-                    if sub_sitemap:
-                        db_log_scan(scan_id, f"Subdomain sitemap {sub}.{domain}: {len(sub_sitemap)} seeds", deleted_scans)
-                except Exception:
-                    pass
+            db_log_scan(
+                scan_id,
+                f"Probing {len(SUBDOMAIN_SITEMAP_CANDIDATES)} common subdomain sitemaps...",
+                deleted_scans,
+            )
+            subdomain_sitemap_hits = 0
+            subdomain_sitemap_processed = 0
+            async for host, sub_sitemap in fetch_subdomain_sitemap_batches(client, domain):
+                subdomain_sitemap_processed += 1
+                seed_urls.extend(sub_sitemap)
+                if sub_sitemap:
+                    subdomain_sitemap_hits += len(sub_sitemap)
+                    db_log_scan(scan_id, f"Subdomain sitemap {host}: {len(sub_sitemap)} seeds", deleted_scans)
+                elif subdomain_sitemap_processed % 4 == 0:
+                    db_log_scan(
+                        scan_id,
+                        f"Subdomain sitemap progress: {subdomain_sitemap_processed}/{len(SUBDOMAIN_SITEMAP_CANDIDATES)} checked",
+                        deleted_scans,
+                    )
+            db_log_scan(scan_id, f"Subdomain sitemap seeds found: {subdomain_sitemap_hits}", deleted_scans)
 
             db_log_scan(scan_id, "Loading Wayback URL seeds...", deleted_scans)
             wb = await fetch_wayback_source_urls(client, domain)
