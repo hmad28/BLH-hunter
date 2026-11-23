@@ -38,6 +38,7 @@ from urllib.parse import urlparse
 import httpx
 
 from . import shared
+from .blh import scanner as blh_scanner
 from .shared import (
     MAX_FRESH_TARGETS,
     canonical_target_url,
@@ -329,12 +330,14 @@ async def run_cli_scan(args) -> list[dict]:
             elif msg.startswith(("Crawling...", "[found]", "[blocked]")):
                 log.info(msg)
 
-        # Honor a custom target cap so the crawl actually STOPS early (lighter
-        # run), instead of always crawling up to the default 100. The engine
-        # reads shared.MAX_FRESH_TARGETS as a module global; this is a single
-        # short-lived CLI process, so overriding it here is safe.
+        # Honor a custom target cap. There are TWO independent caps that both
+        # default to 100: shared.MAX_FRESH_TARGETS bounds the whole crawl, and
+        # blh_scanner.MAX_FRESH_TARGETS bounds links collected from a SINGLE page
+        # (a directory page like nasa.gov/social-media/ holds far more than 100).
+        # Both are module globals; override both so --max really lifts the limit.
         if args.max and args.max > 0:
             shared.MAX_FRESH_TARGETS = args.max
+            blh_scanner.MAX_FRESH_TARGETS = args.max
 
         # Wall-clock budget: large domains (many slow/dead subdomains, each hit
         # with a 15s crawl timeout sequentially) can otherwise run for hours.
@@ -386,6 +389,16 @@ async def run_cli_scan(args) -> list[dict]:
             f"platform_hits={stats['platform_hits']} account_hits={stats['account_hits']} "
             f"targets={len(fresh_links)}"
         )
+
+        # If we hit the target cap, more links almost certainly exist (e.g. a big
+        # directory page). Nudge the user to raise --max / relax the budget.
+        effective_cap = args.max if (args.max and args.max > 0) else MAX_FRESH_TARGETS
+        if len(fresh_links) >= effective_cap:
+            log.warn(
+                f"Hit the target cap ({effective_cap}). There are likely MORE links "
+                f"- re-run with a higher --max (e.g. --max {effective_cap * 5}) "
+                "and --timeout 0 for full coverage."
+            )
 
         if args.max and args.max > 0:
             fresh_links = fresh_links[: args.max]

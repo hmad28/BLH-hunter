@@ -227,6 +227,22 @@ new links, so coverage grows run over run — but an individual run still uses i
 full time budget. It is incremental, not instant, on huge sites. For a quick
 sample instead, use a small `--max`.
 
+### Maximum coverage
+
+`--max` is both the total cap **and** the per-page cap. The default is 100, so a
+directory page that lists hundreds of accounts (e.g. `nasa.gov/social-media/`)
+is truncated at 100. To capture everything, raise `--max` and lift the time
+budget:
+
+```bash
+# full sweep: no time limit, high cap, all platforms
+python scan.py nasa.gov --max 5000 --timeout 0 --state nasa.json
+```
+
+When a run prints `Hit the target cap (N)`, more links almost certainly exist —
+re-run with a higher `--max`. Adding more platforms (`-p` default is all) and
+`--deep` (passive seeds) widens coverage further.
+
 ## Usage
 
 1. Open the web UI.
