@@ -220,8 +220,8 @@ async def check_all(client, links: list[dict], concurrency: int, log: Logger) ->
 
 
 def load_state(path: str, domain: str, log: Logger) -> dict:
-    """Load a prior scan state file. Returns {sources:set, results:list}."""
-    empty = {"sources": set(), "results": []}
+    """Load a prior scan state file. Returns {sources:set, results:list, pending:list}."""
+    empty = {"sources": set(), "results": [], "pending": []}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -237,25 +237,30 @@ def load_state(path: str, domain: str, log: Logger) -> dict:
         return empty
     sources = {canonical_url(u) for u in data.get("sources", []) if u}
     results = [r for r in data.get("results", []) if isinstance(r, dict)]
+    pending = [u for u in data.get("pending", []) if u]
     log.info(
-        f"Loaded state: {len(sources)} crawled source(s), {len(results)} known result(s)."
+        f"Loaded state: {len(sources)} crawled source(s), {len(results)} known "
+        f"result(s), {len(pending)} pending page(s) to resume."
     )
-    return {"sources": sources, "results": results}
+    return {"sources": sources, "results": results, "pending": pending}
 
 
-def save_state(path: str, domain: str, sources: set, results: list, log: Logger):
+def save_state(path: str, domain: str, sources: set, results: list, log: Logger,
+               pending: list = None):
+    pending = pending or []
     payload = {
         "domain": domain,
         "updated_at": utc_now_iso(),
         "sources": sorted(sources),
+        "pending": pending,
         "results": results,
     }
     try:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
         log.info(
-            f"State saved: {len(sources)} crawled source(s), {len(results)} result(s) "
-            f"-> {path}"
+            f"State saved: {len(sources)} crawled source(s), {len(results)} result(s), "
+            f"{len(pending)} pending page(s) -> {path}"
         )
     except OSError as e:
         log.warn(f"Could not write state file {path}: {e}")
@@ -300,11 +305,12 @@ async def run_cli_scan(args) -> list[dict]:
     ) as client:
         # Load prior state (crawled sources + known results) if requested, so a
         # repeat run skips already-crawled source pages and already-found links.
-        state = {"sources": set(), "results": []}
+        state = {"sources": set(), "results": [], "pending": []}
         if args.state:
             state = load_state(args.state, domain, log)
         known_sources = set(state["sources"])
         prior_results = state["results"]
+        pending_seeds = state.get("pending", [])
         known_targets = {
             canonical_target_url(r["target_url"], ACCOUNT_PATH_PATTERNS)
             for r in prior_results
@@ -341,12 +347,21 @@ async def run_cli_scan(args) -> list[dict]:
                          "error_reason": chk.get("error_reason", "")}
                 rechecked.append(r)
             if args.state:
-                save_state(args.state, domain, known_sources, rechecked, log)
+                save_state(args.state, domain, known_sources, rechecked, log,
+                           pending=pending_seeds)
             return rechecked, {
                 canonical_target_url(r["target_url"], ACCOUNT_PATH_PATTERNS) for r in rechecked
             }
 
         seed_urls = await collect_seeds(client, domain, log, passive=args.deep)
+
+        # Resume: prepend not-yet-crawled pages saved from a previous run so the
+        # crawl continues deeper instead of restarting from the sitemap seeds.
+        if pending_seeds:
+            resume = [u for u in pending_seeds if canonical_url(u) not in known_sources]
+            if resume:
+                log.info(f"Resuming from {len(resume)} pending page(s) saved earlier.")
+                seed_urls = resume + seed_urls
 
         # Record every page actually crawled this run, so state persists them and
         # the next run can skip them (this is what makes repeat scans fast).
@@ -477,8 +492,25 @@ async def run_cli_scan(args) -> list[dict]:
         return new_rows, new_keys
     merged = merge_results(prior_results, new_rows)
     all_sources = known_sources | crawled_sources
-    save_state(args.state, domain, all_sources, merged, log)
+    # Save the not-yet-crawled frontier so the NEXT run resumes instead of
+    # restarting. Drop anything already crawled, and cap the list so the state
+    # file stays reasonable.
+    new_pending = []
+    seen_pending = set()
+    for u in stats.get("pending_frontier", []):
+        ckey = canonical_url(u)
+        if ckey in all_sources or ckey in seen_pending:
+            continue
+        seen_pending.add(ckey)
+        new_pending.append(u)
+    new_pending = new_pending[:20000]
+    save_state(args.state, domain, all_sources, merged, log, pending=new_pending)
     log.info(f"New links this run: {len(new_rows)} | total known: {len(merged)}")
+    if new_pending:
+        log.info(
+            f"{len(new_pending)} page(s) still queued - run the same command again "
+            "to continue crawling deeper."
+        )
     return merged, new_keys
 
 
@@ -591,7 +623,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--new-only", action="store_true",
-        help="print only links newly found in this run (useful with --state)",
+        help="print only links newly found in this run (default when --state is used)",
+    )
+    p.add_argument(
+        "--show-all", action="store_true",
+        help="with --state, print the full accumulated result set (not just new links)",
     )
     p.add_argument(
         "--recheck", action="store_true",
@@ -640,8 +676,22 @@ def main(argv=None):
         print("\n[!] Interrupted.", file=sys.stderr)
         return 130
 
-    print_rows(rows, args.broken_only, args.new_only, new_keys)
+    # With --state, default to showing only this run's NEW links (incremental
+    # mode) so repeated runs don't re-print the whole accumulated set. --show-all
+    # overrides; --new-only forces it on even without --state.
+    show_new_only = args.new_only or (bool(args.state) and not args.show_all)
+    print_rows(rows, args.broken_only, show_new_only, new_keys)
     if not args.quiet:
+        if show_new_only and not args.new_only:
+            shown = len(new_keys)
+            print(
+                _c(
+                    f"[i] Showing {shown} NEW link(s) this run; {len(rows)} total known. "
+                    "Use --show-all to list everything, or --json/--csv to export.",
+                    C.CYAN,
+                ),
+                file=sys.stderr,
+            )
         print_summary(rows, time.time() - start)
         # If almost everything came back non-alive, the IP was likely throttled
         # by the platforms (common after a heavy crawl) - status checks on

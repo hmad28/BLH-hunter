@@ -537,6 +537,10 @@ async def discover_sources_by_crawling(
             f"new_targets={len(fresh_links)} platform_hits={total_platform_hits} "
             f"account_hits={total_account_hits} hosts={len(crawled_hosts)}",
         )
+    # URLs discovered but not yet crawled when the loop stopped (budget/page cap).
+    # Exposed so callers can persist them and RESUME crawling on a later run
+    # instead of restarting from the original seeds.
+    pending_frontier = [u for q in host_queues.values() for (u, _d) in q]
     stats = {
         "visited": len(visited),
         "skipped_sources": skipped_sources,
@@ -546,5 +550,6 @@ async def discover_sources_by_crawling(
         "platform_hits": total_platform_hits,
         "account_hits": total_account_hits,
         "hosts": len(crawled_hosts),
+        "pending_frontier": pending_frontier,
     }
     return sources, fresh_links, stats

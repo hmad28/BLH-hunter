@@ -165,6 +165,7 @@ Key flags (`python scan.py --help` for the full list):
 | `--timeout N` | Overall crawl time budget in seconds; stops with partial results (default: 300, `0` disables) |
 | `--state FILE` | Persist crawled sources + results to a JSON file; repeat runs skip already-crawled pages (incremental) |
 | `--recheck` | Re-verify statuses of links already in `--state` without crawling (fixes false `broken` from throttling) |
+| `--show-all` | With `--state`, print the full accumulated result set instead of just this run's new links |
 | `-c, --concurrency N` | Concurrent status checks (default: 10) |
 | `--broken-only` | Print only links that are not alive |
 | `--json FILE` / `--csv FILE` | Export full results |
@@ -212,8 +213,21 @@ python scan.py nasa.gov -p instagram,twitter --state nasa.json
 python scan.py nasa.gov -p instagram,twitter --state nasa.json
 ```
 
-Add `--new-only` to print just the links discovered in the current run (instead
-of the full accumulated set), which makes per-run progress obvious:
+State also records the **pending frontier** — pages discovered but not yet
+crawled when a run stopped (time budget or the 2000-page-per-run cap). The next
+run with the same `--state` file **resumes** from those pages instead of
+restarting from the sitemap seeds, so repeated runs crawl the site progressively
+deeper. When a run ends it prints how many pages are still queued; just run the
+same command again to continue. (A state file written before this feature has no
+pending list — delete it and re-run, or add `--deep`, to seed fresh entry
+points.)
+
+When `--state` is used the terminal **prints only the links found in the current
+run** by default (incremental mode), with a one-line summary of the total known,
+so repeated runs don't re-print the whole accumulated list. Pass `--show-all` to
+print the full set, or use `--json`/`--csv` which always export everything.
+
+`--new-only` forces new-only output even without `--state`:
 
 ```bash
 python scan.py nasa.gov -p instagram,twitter --state nasa.json --new-only
